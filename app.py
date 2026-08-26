@@ -229,7 +229,7 @@ roster = users()
 service_account = dict(st.secrets["google_service_account"])
 drive_settings = st.secrets["google_drive"]
 folder_id = str(drive_settings["folder_id"])
-team_file_name = "practice_team_data.json"
+team_file_name = st.secrets["google_drive"]["file_name"]
 
 store = TeamStore(
     service_account,

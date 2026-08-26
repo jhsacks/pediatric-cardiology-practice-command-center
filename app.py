@@ -440,4 +440,4 @@ elif page == "Physician RVUs":
 
 
 elif page == "📅 Call & Vacation":
-    render_editor(extra, save_extra, log_activity)
+    render_readonly(ensure_store(extra))

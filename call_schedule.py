@@ -189,20 +189,32 @@ def render_readonly(store):
     year = st.selectbox("Calendar year", years, index=len(years) - 1, key="practice_schedule_year")
     doctors = doctor_names(store)
     frame = schedule_frame(store, year)
-    tabs = st.tabs(["Calendar", "Call Equity", "Vacation", "Owed Call", "Holidays"])
+    gaps = frame[frame.apply(lambda row: len(call_credits(row)) == 0, axis=1)]
+    conflicts = frame[frame["Conflict"].astype(str).str.len() > 0]
+    metrics = st.columns(4)
+    metrics[0].metric("Unassigned dates", len(gaps))
+    metrics[1].metric("Call/vacation conflicts", len(conflicts))
+    metrics[2].metric("Weekend call credits", call_summary(frame, doctors)["Weekend"].sum())
+    metrics[3].metric("Weekday call credits", call_summary(frame, doctors)["Weekday"].sum())
+    tabs = st.tabs(["Calendar", "Coverage Gaps", "Call Equity", "Vacation", "Owed Call", "Holidays"])
     with tabs[0]:
         st.dataframe(frame, hide_index=True, use_container_width=True)
     with tabs[1]:
-        st.dataframe(call_summary(frame, doctors), hide_index=True, use_container_width=True)
+        if gaps.empty:
+            st.success("Every date has call coverage.")
+        else:
+            st.dataframe(gaps[["Date", "Day", "Holiday", "Notes"]], hide_index=True, use_container_width=True)
     with tabs[2]:
-        st.dataframe(vacation_summary(frame, store), hide_index=True, use_container_width=True)
+        st.dataframe(call_summary(frame, doctors), hide_index=True, use_container_width=True)
     with tabs[3]:
+        st.dataframe(vacation_summary(frame, store), hide_index=True, use_container_width=True)
+    with tabs[4]:
         owed = pd.DataFrame(store.get("owed_calls", []))
         if owed.empty:
             st.info("No owed calls recorded.")
         else:
             st.dataframe(owed, hide_index=True, use_container_width=True)
-    with tabs[4]:
+    with tabs[5]:
         st.subheader(f"{year} Holiday Assignments")
         st.dataframe(holiday_assignments(frame), hide_index=True, use_container_width=True)
         st.subheader("Holiday History")

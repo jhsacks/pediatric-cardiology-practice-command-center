@@ -103,8 +103,11 @@ def render_initiative(item, user, store, roster):
 
 user = sign_in()
 roster = users()
-store = TeamStore(secret("GOOGLE_SERVICE_ACCOUNT_JSON"), secret("GOOGLE_DRIVE_FOLDER_ID", ""), secret("PRACTICE_TEAM_FILE_NAME", "practice_team_data.json"))
-data = store.load(seed())
+store = TeamStore(
+    dict(st.secrets["google_service_account"]),
+    secret("GOOGLE_DRIVE_FOLDER_ID", ""),
+    secret("PRACTICE_TEAM_FILE_NAME", "practice_team_data.json")
+)
 
 with st.sidebar:
     st.title("❤️ Practice Command Center")

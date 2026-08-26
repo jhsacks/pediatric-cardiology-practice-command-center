@@ -155,6 +155,44 @@ def render_initiative(item, user, store, roster):
                 st.dataframe(history, hide_index=True, use_container_width=True)
 
 
+def practice_visible(item, default="Private"):
+    return str(item.get("visibility", default)).strip().title() in ["Practice", "Shared"]
+
+
+def visible_records(records, default="Private"):
+    return [item for item in records if practice_visible(item, default)]
+
+
+def add_annual_metrics(frame):
+    if frame.empty:
+        return frame
+    result = frame.copy()
+    for month in MONTHS:
+        if month not in result.columns:
+            result[month] = None
+        result[month] = pd.to_numeric(result[month], errors="coerce")
+    result["FY Total"] = result[MONTHS].sum(axis=1, min_count=1)
+    result["Months Entered"] = result[MONTHS].notna().sum(axis=1)
+    denominator = result["Months Entered"].astype("float64").where(lambda value: value > 0)
+    result["Monthly Average"] = result["FY Total"].astype("float64").div(denominator).round(1)
+    result["Projected FY RVUs"] = (result["Monthly Average"] * 12).round(0)
+    return result
+
+
+def add_yoy(frame, group=None):
+    if frame.empty:
+        return frame
+    keys = ([group] if group else []) + ["Fiscal Year"]
+    result = frame.sort_values(keys).copy()
+    if group:
+        result["Prior FY Total"] = result.groupby(group)["FY Total"].shift(1)
+    else:
+        result["Prior FY Total"] = result["FY Total"].shift(1)
+    result["YoY Change"] = result["FY Total"] - result["Prior FY Total"]
+    result["YoY %"] = ((result["FY Total"] / result["Prior FY Total"] - 1) * 100).round(1)
+    return result
+
+
 def practice_total_rows(rvu):
     historical = pd.DataFrame(rvu.get("historical_totals", []))
     physician = pd.DataFrame(rvu.get("physician_rows", []))
@@ -184,7 +222,8 @@ store = TeamStore(
     str(drive_settings["file_name"]),
 )
 raw_data = store.load()
-initiatives = TeamStore.initiatives(raw_data)
+all_initiatives = TeamStore.initiatives(raw_data)
+initiatives = visible_records(all_initiatives, "Practice")
 extra = TeamStore.extras(raw_data)
 
 with st.sidebar:
@@ -212,8 +251,8 @@ st.caption(
 if page == "Home":
     cols = st.columns(4)
     cols[0].metric("Initiatives", len(initiatives))
-    cols[1].metric("Decisions", len(extra.get("decisions", [])))
-    cols[2].metric("Roadmap", len(extra.get("roadmap", [])))
+    cols[1].metric("Decisions", len(visible_records(extra.get("decisions", []), "Private")))
+    cols[2].metric("Roadmap", len(visible_records(extra.get("roadmap", []), "Private")))
     cols[3].metric(
         "Intelligence",
         len(extra.get("clinical_intelligence", {}).get("items", [])),
@@ -240,11 +279,11 @@ elif page == "Initiatives":
         st.info("No practice initiatives are available.")
 
 elif page == "Decisions":
-    frame = pd.DataFrame(extra.get("decisions", []))
+    frame = pd.DataFrame(visible_records(extra.get("decisions", []), "Private"))
     st.dataframe(frame, hide_index=True, use_container_width=True) if not frame.empty else st.info("No practice decisions.")
 
 elif page == "Roadmap":
-    frame = pd.DataFrame(extra.get("roadmap", []))
+    frame = pd.DataFrame(visible_records(extra.get("roadmap", []), "Private"))
     st.dataframe(frame, hide_index=True, use_container_width=True) if not frame.empty else st.info("No roadmap items.")
 
 elif page == "Clinical Intelligence":
@@ -266,20 +305,31 @@ elif page == "Clinical Intelligence":
         st.info("No practice-visible Clinical Intelligence items.")
 
 elif page == "Practice Growth":
-    frame = pd.DataFrame(extra.get("growth", []))
+    frame = pd.DataFrame(visible_records(extra.get("growth", []), "Practice"))
     st.dataframe(frame, hide_index=True, use_container_width=True) if not frame.empty else st.info("No growth data.")
 
 elif page == "Physician RVUs":
     rvu = extra.get("rvu_metrics", {})
     historical = pd.DataFrame(rvu.get("historical_totals", []))
     physician = pd.DataFrame(rvu.get("physician_rows", []))
-    totals = practice_total_rows(rvu)
-    tabs = st.tabs(["Practice Totals", "Physician Data", "Graphs"])
+    totals = add_annual_metrics(practice_total_rows(rvu))
+    physician_annual = add_annual_metrics(physician)
+
+    tabs = st.tabs([
+        "Practice Totals",
+        "Monthly Trends",
+        "Year-over-Year",
+        "Physician Self-Trends",
+        "Physician Data",
+    ])
+
     with tabs[0]:
-        st.dataframe(totals, hide_index=True, use_container_width=True) if not totals.empty else st.info("No RVU totals.")
+        if totals.empty:
+            st.info("No RVU totals.")
+        else:
+            st.dataframe(totals, hide_index=True, use_container_width=True)
+
     with tabs[1]:
-        st.dataframe(physician, hide_index=True, use_container_width=True) if not physician.empty else st.info("No physician data.")
-    with tabs[2]:
         if totals.empty or "Fiscal Year" not in totals.columns:
             st.info("No graphable RVU data.")
         else:
@@ -301,3 +351,79 @@ elif page == "Physician RVUs":
             )
             chart.index = [months[int(index)] for index in chart.index]
             st.line_chart(chart)
+            st.dataframe(
+                long[["Fiscal Year", "Month", "RVUs"]],
+                hide_index=True,
+                use_container_width=True,
+            )
+
+    with tabs[2]:
+        practice_yoy = add_yoy(totals)
+        if practice_yoy.empty:
+            st.info("No year-over-year RVU data.")
+        else:
+            st.bar_chart(practice_yoy.set_index("Fiscal Year")["FY Total"])
+            columns = [
+                "Fiscal Year", "FY Total", "Months Entered",
+                "Monthly Average", "Projected FY RVUs",
+                "Prior FY Total", "YoY Change", "YoY %",
+            ]
+            available = [column for column in columns if column in practice_yoy.columns]
+            st.dataframe(
+                practice_yoy[available],
+                hide_index=True,
+                use_container_width=True,
+            )
+            st.caption(
+                "Year-over-year comparisons are most meaningful when both fiscal years "
+                "contain the same number of entered months."
+            )
+
+    with tabs[3]:
+        if physician_annual.empty or "Physician" not in physician_annual.columns:
+            st.info("No physician trend data.")
+        else:
+            physicians = sorted(
+                value for value in physician_annual["Physician"].dropna().unique()
+                if str(value).strip()
+            )
+            selected = st.multiselect(
+                "Physician",
+                physicians,
+                default=physicians,
+            )
+            filtered = physician_annual[
+                physician_annual["Physician"].isin(selected)
+            ].copy()
+            if not filtered.empty:
+                st.line_chart(
+                    filtered.pivot_table(
+                        index="Fiscal Year",
+                        columns="Physician",
+                        values="FY Total",
+                        aggfunc="sum",
+                    )
+                )
+                self_yoy = add_yoy(filtered, "Physician")
+                columns = [
+                    "Fiscal Year", "Physician", "FY Total", "Months Entered",
+                    "Monthly Average", "Projected FY RVUs", "Prior FY Total",
+                    "YoY Change", "YoY %",
+                ]
+                available = [column for column in columns if column in self_yoy.columns]
+                st.dataframe(
+                    self_yoy[available].sort_values(["Physician", "Fiscal Year"]),
+                    hide_index=True,
+                    use_container_width=True,
+                )
+                st.caption(
+                    "No ranking is used. Each physician is shown only against that "
+                    "physician's own prior history."
+                )
+
+    with tabs[4]:
+        if physician.empty:
+            st.info("No physician data.")
+        else:
+            st.dataframe(physician, hide_index=True, use_container_width=True)
+

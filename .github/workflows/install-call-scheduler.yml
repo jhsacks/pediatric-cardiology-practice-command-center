@@ -1,0 +1,29 @@
+name: Install Call Vacation Scheduler
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  install:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Patch app navigation
+        env:
+          CALL_SCHEDULER_MODE: "executive"
+        run: python install_call_scheduler.py
+      - name: Validate Python
+        run: python -m py_compile app.py call_schedule.py
+      - name: Commit changes
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add app.py call_schedule.py
+          git diff --cached --quiet || git commit -m "Integrate Call and Vacation Scheduler"
+          git push

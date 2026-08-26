@@ -1,5 +1,3 @@
-import hashlib
-import hmac
 import json
 from pathlib import Path
 
@@ -8,9 +6,10 @@ import streamlit as st
 
 from team_backend import TeamStore
 
-st.set_page_config(page_title="Pediatric Cardiology Practice Command Center", page_icon="❤️", layout="wide")
-SEED_FILE = Path(__file__).parent / "practice_snapshot.json"
+st.set_page_config(page_title="Practice Command Center", page_icon="❤️", layout="wide")
+SEED = Path(__file__).parent / "practice_snapshot.json"
 STATUSES = ["Discovery", "Planned", "In progress", "Blocked", "On Hold", "Backlog", "Complete", "Cancelled"]
+MONTHS = ["Jul", "Aug", "Sep", "Oct", "Nov", "Dec", "Jan", "Feb", "Mar", "Apr", "May", "Jun"]
 
 
 def secret(name, default=None):
@@ -20,198 +19,141 @@ def secret(name, default=None):
         return default
 
 
-def team_users():
-    raw = secret("TEAM_USERS", [])
-    users = []
-    for user in raw:
-        users.append({
-            "name": str(user.get("name", "")).strip(),
-            "email": str(user.get("email", "")).strip().casefold(),
-            "pin_hash": str(user.get("pin_hash", "")).strip().casefold(),
-            "admin": bool(user.get("admin", False)),
-        })
-    return users
+def users():
+    result = []
+    for row in secret("TEAM_USERS", []):
+        pin = int(row.get("pin", 0))
+        if not 1 <= pin <= 100:
+            continue
+        result.append({"name": str(row.get("name", "")).strip(), "email": str(row.get("email", "")).strip().casefold(), "pin": str(pin), "admin": bool(row.get("admin", False))})
+    return result
 
 
-def pin_hash(pin):
-    return hashlib.sha256(str(pin).encode("utf-8")).hexdigest()
-
-
-def login():
-    if st.session_state.get("team_user"):
-        return st.session_state.team_user
-    users = team_users()
-    if not users:
-        st.error("TEAM_USERS is missing from Streamlit Secrets.")
+def sign_in():
+    if st.session_state.get("practice_user"):
+        return st.session_state.practice_user
+    roster = users()
+    if not roster:
+        st.error("TEAM_USERS is missing or contains no PINs from 1 through 100.")
         st.stop()
     st.title("Practice Command Center Sign In")
-    names = [u["name"] for u in users]
-    selected = st.selectbox("Team member", names)
-    pin = st.text_input("PIN", type="password")
+    name = st.selectbox("Team member", [u["name"] for u in roster])
+    pin = st.text_input("PIN number (1-100)", type="password")
     if st.button("Sign in", type="primary"):
-        user = next(u for u in users if u["name"] == selected)
-        supplied = pin_hash(pin)
-        if user["pin_hash"] and hmac.compare_digest(supplied, user["pin_hash"]):
-            st.session_state.team_user = {"name": user["name"], "email": user["email"], "admin": user["admin"]}
+        match = next(u for u in roster if u["name"] == name)
+        if pin.strip() == match["pin"]:
+            st.session_state.practice_user = {k: match[k] for k in ["name", "email", "admin"]}
             st.rerun()
         st.error("The selected user and PIN did not match.")
-    st.caption("This is lightweight app-level access control. Do not use it for PHI or patient-identifiable information.")
+    st.caption("Lightweight access only. Do not place PHI or patient identifiers in this app.")
     st.stop()
 
 
-def load_seed():
-    if not SEED_FILE.exists():
+def seed():
+    if not SEED.exists():
         return {"initiatives": [], "decisions": [], "roadmap": [], "growth": [], "clinical_intelligence": {"items": []}, "rvu_metrics": {}}
-    return json.loads(SEED_FILE.read_text())
+    return json.loads(SEED.read_text())
 
 
 def owner_emails(item):
     values = item.get("owner_emails", [])
-    if isinstance(values, str):
-        values = [x.strip() for x in values.split(",") if x.strip()]
-    if not values and item.get("owner_email"):
-        values = [item.get("owner_email")]
-    return {str(x).strip().casefold() for x in values if str(x).strip()}
+    if isinstance(values, str): values = [x.strip() for x in values.split(",")]
+    if not values and item.get("owner_email"): values = [item["owner_email"]]
+    return {str(x).casefold() for x in values if str(x).strip()}
 
 
-def can_edit(item, user):
-    return bool(user.get("admin")) or user["email"] in owner_emails(item)
-
-
-def display_owners(item):
-    names = item.get("owners", [])
-    if isinstance(names, str):
-        names = [x.strip() for x in names.split(",") if x.strip()]
-    if not names and item.get("owner"):
-        names = [item.get("owner")]
-    return ", ".join(str(x) for x in names if str(x).strip()) or "Unassigned"
-
-
-def render_initiative(item, user, store):
-    archived = bool(item.get("archived", False))
-    with st.expander(f"{'ARCHIVED | ' if archived else ''}{item.get('id','')} | {item.get('name','Untitled')} | {item.get('progress',0)}%"):
-        st.caption(f"Owners: {display_owners(item)} | {item.get('status','')} | {item.get('priority','')}")
+def render_initiative(item, user, store, roster):
+    with st.expander(f"{'ARCHIVED | ' if item.get('archived') else ''}{item.get('id','')} | {item.get('name','Untitled')} | {item.get('progress',0)}%"):
+        owners = item.get("owners") or ([item.get("owner")] if item.get("owner") else [])
+        st.caption(f"Owners: {', '.join(owners) if owners else 'Unassigned'} | {item.get('status','')} | {item.get('priority','')}")
+        editable = user["admin"] or user["email"] in owner_emails(item)
+        if user["admin"]:
+            current = owner_emails(item)
+            options = {u["email"]: u["name"] for u in roster}
+            selected = st.multiselect("Assigned owners", list(options), default=[e for e in current if e in options], format_func=lambda e: options[e], key=f"owners_{item.get('id')}")
+            if st.button("Save owners", key=f"save_owners_{item.get('id')}"):
+                store.update_initiative(item.get("id"), {"owner_emails": selected, "owners": [options[e] for e in selected]}, user)
+                st.rerun()
         actions = item.get("next_actions") or ([item.get("next_action")] if item.get("next_action") else [])
-        if actions:
-            st.markdown("**Next actions**")
-            for action in actions:
-                st.write(str(action))
-        if can_edit(item, user):
+        if editable:
             with st.form(f"edit_{item.get('id')}"):
                 status_value = item.get("status") if item.get("status") in STATUSES else "Planned"
                 status = st.selectbox("Status", STATUSES, index=STATUSES.index(status_value))
                 progress = st.slider("Progress", 0, 100, int(item.get("progress", 0)))
                 action_text = "\n".join(str(x).lstrip("⭐ ") for x in actions)
-                next_actions = st.text_area("Next actions, one per line", action_text)
-                owner_update = st.text_area("Owner update", item.get("owner_update", ""))
+                action_input = st.text_area("Next actions, one per line", action_text)
+                update = st.text_area("Owner update", item.get("owner_update", ""))
                 if st.form_submit_button("Save Initiative Update"):
-                    action_list = [f"⭐ {line.strip().lstrip('⭐* ').strip()}" for line in next_actions.splitlines() if line.strip()]
-                    store.update_initiative(item.get("id"), {
-                        "status": status,
-                        "progress": progress,
-                        "next_actions": action_list,
-                        "next_action": action_list[0] if action_list else "",
-                        "owner_update": owner_update.strip(),
-                    }, user)
+                    action_list = [f"⭐ {x.strip().lstrip('⭐* ').strip()}" for x in action_input.splitlines() if x.strip()]
+                    store.update_initiative(item.get("id"), {"status": status, "progress": progress, "next_actions": action_list, "next_action": action_list[0] if action_list else "", "owner_update": update.strip()}, user)
                     st.rerun()
         else:
-            st.info("Only an assigned owner or administrator can change this initiative. Every signed-in team member can comment.")
-        st.markdown("**Comments**")
-        comments = item.get("comments", [])
-        for comment in comments:
-            author = comment.get("author_name") or comment.get("author_email")
-            st.write(f"{comment.get('timestamp_utc','')} | **{author}**: {comment.get('comment','')}")
+            st.info("Only an assigned owner or administrator can edit. Everyone can comment.")
+        for comment in item.get("comments", []):
+            st.write(f"{comment.get('timestamp_utc','')} | **{comment.get('author_name','')}**: {comment.get('comment','')}")
         with st.form(f"comment_{item.get('id')}"):
-            comment = st.text_area("Add a comment")
-            if st.form_submit_button("Post Comment") and comment.strip():
-                store.add_comment(item.get("id"), comment, user)
+            text = st.text_area("Add a comment")
+            if st.form_submit_button("Post Comment") and text.strip():
+                store.add_comment(item.get("id"), text, user)
                 st.rerun()
         with st.expander("History"):
-            history = item.get("history", [])
-            if history:
-                st.dataframe(pd.DataFrame(history), hide_index=True, use_container_width=True)
-            else:
-                st.write("No change history yet.")
+            history = pd.DataFrame(item.get("history", []))
+            st.dataframe(history, hide_index=True, use_container_width=True) if not history.empty else st.write("No history yet.")
 
 
-user = login()
-service_account = secret("GOOGLE_SERVICE_ACCOUNT_JSON")
-folder_id = secret("GOOGLE_DRIVE_FOLDER_ID", "")
-file_name = secret("PRACTICE_TEAM_FILE_NAME", "practice_team_data.json")
-if not service_account or not folder_id:
-    st.error("Google Drive secrets are incomplete.")
-    st.stop()
-store = TeamStore(service_account, folder_id, file_name)
-data = store.load(load_seed())
+user = sign_in()
+roster = users()
+store = TeamStore(secret("GOOGLE_SERVICE_ACCOUNT_JSON"), secret("GOOGLE_DRIVE_FOLDER_ID", ""), secret("PRACTICE_TEAM_FILE_NAME", "practice_team_data.json"))
+data = store.load(seed())
 
 with st.sidebar:
     st.title("❤️ Practice Command Center")
     page = st.radio("Navigate", ["Home", "Initiatives", "Decisions", "Roadmap", "Clinical Intelligence", "Practice Growth", "Physician RVUs"])
     st.caption(f"Signed in: {user['name']}")
-    if st.button("Refresh data"):
-        st.rerun()
+    if st.button("Refresh"): st.rerun()
     if st.button("Sign out"):
-        st.session_state.pop("team_user", None)
+        st.session_state.pop("practice_user", None)
         st.rerun()
 
 st.title("Pediatric Cardiology Practice Command Center")
-st.caption("Collaborative initiatives. RVUs, metrics, decisions, roadmap, and intelligence are view-only.")
+st.caption("Initiatives are collaborative. RVUs, growth, decisions, roadmap, and intelligence are view-only.")
 
 if page == "Home":
-    cols = st.columns(5)
+    cols = st.columns(4)
     cols[0].metric("Initiatives", len(data.get("initiatives", [])))
     cols[1].metric("Decisions", len(data.get("decisions", [])))
     cols[2].metric("Roadmap", len(data.get("roadmap", [])))
     cols[3].metric("Intelligence", len(data.get("clinical_intelligence", {}).get("items", [])))
-    cols[4].metric("Growth rows", len(data.get("growth", [])))
     st.subheader("My Initiatives")
-    mine = [x for x in data.get("initiatives", []) if user["email"] in owner_emails(x)]
-    for item in mine:
-        render_initiative(item, user, store)
-    if not mine:
-        st.info("No initiatives are assigned to this user yet.")
+    mine = [i for i in data.get("initiatives", []) if user["admin"] or user["email"] in owner_emails(i)]
+    for item in mine: render_initiative(item, user, store, roster)
 elif page == "Initiatives":
-    show_archived = st.toggle("Show archived initiatives", value=False)
-    initiatives = [x for x in data.get("initiatives", []) if show_archived or not x.get("archived", False)]
-    for item in initiatives:
-        render_initiative(item, user, store)
+    show_archived = st.toggle("Show archived", False)
+    for item in [i for i in data.get("initiatives", []) if show_archived or not i.get("archived")]: render_initiative(item, user, store, roster)
 elif page == "Decisions":
-    frame = pd.DataFrame(data.get("decisions", []))
-    st.dataframe(frame, hide_index=True, use_container_width=True) if not frame.empty else st.info("No practice decisions.")
+    frame = pd.DataFrame(data.get("decisions", [])); st.dataframe(frame, hide_index=True, use_container_width=True) if not frame.empty else st.info("No practice decisions.")
 elif page == "Roadmap":
-    frame = pd.DataFrame(data.get("roadmap", []))
-    st.dataframe(frame, hide_index=True, use_container_width=True) if not frame.empty else st.info("No practice roadmap items.")
+    frame = pd.DataFrame(data.get("roadmap", [])); st.dataframe(frame, hide_index=True, use_container_width=True) if not frame.empty else st.info("No roadmap items.")
 elif page == "Clinical Intelligence":
     for item in data.get("clinical_intelligence", {}).get("items", []):
-        with st.expander(f"{item.get('content_type','')} | {item.get('title','Untitled')}"):
+        with st.expander(item.get("title", "Untitled")):
             st.write(item.get("summary", ""))
-            if item.get("key_findings"):
-                st.write(f"**Key findings:** {item['key_findings']}")
-            if item.get("practice_relevance"):
-                st.write(f"**Practice relevance:** {item['practice_relevance']}")
-            if item.get("link"):
-                st.link_button("Open original source", item["link"])
+            if item.get("link"): st.link_button("Open source", item["link"])
 elif page == "Practice Growth":
-    frame = pd.DataFrame(data.get("growth", []))
-    st.dataframe(frame, hide_index=True, use_container_width=True) if not frame.empty else st.info("No practice growth rows.")
+    frame = pd.DataFrame(data.get("growth", [])); st.dataframe(frame, hide_index=True, use_container_width=True) if not frame.empty else st.info("No growth data.")
 elif page == "Physician RVUs":
     rvu = data.get("rvu_metrics", {})
-    historical = pd.DataFrame(rvu.get("historical_totals", []))
-    physician = pd.DataFrame(rvu.get("physician_rows", []))
-    tabs = st.tabs(["Historical Totals", "Physician Entries", "Monthly Graphs"])
-    with tabs[0]:
-        st.dataframe(historical, hide_index=True, use_container_width=True) if not historical.empty else st.info("No historical data.")
-    with tabs[1]:
-        st.dataframe(physician, hide_index=True, use_container_width=True) if not physician.empty else st.info("No physician entries.")
+    hist = pd.DataFrame(rvu.get("historical_totals", [])); physician = pd.DataFrame(rvu.get("physician_rows", []))
+    tabs = st.tabs(["Historical Totals", "Physician Data", "Graphs"])
+    with tabs[0]: st.dataframe(hist, hide_index=True, use_container_width=True) if not hist.empty else st.info("No historical totals.")
+    with tabs[1]: st.dataframe(physician, hide_index=True, use_container_width=True) if not physician.empty else st.info("No physician data.")
     with tabs[2]:
-        source = historical if not historical.empty else physician
-        if source.empty or "Fiscal Year" not in source.columns:
-            st.info("No graphable RVU data.")
+        source = hist if not hist.empty else physician
+        if source.empty or "Fiscal Year" not in source: st.info("No graphable data.")
         else:
-            months = [m for m in ["Jul","Aug","Sep","Oct","Nov","Dec","Jan","Feb","Mar","Apr","May","Jun"] if m in source.columns]
-            identifier = "Fiscal Year"
-            long = source.melt(id_vars=[identifier], value_vars=months, var_name="Month", value_name="RVUs").dropna(subset=["RVUs"])
+            months = [m for m in MONTHS if m in source]
+            long = source.melt(id_vars=["Fiscal Year"], value_vars=months, value_name="RVUs", var_name="Month").dropna(subset=["RVUs"])
             long["Order"] = long["Month"].map({m:i for i,m in enumerate(months)})
-            chart = long.pivot_table(index="Order", columns=identifier, values="RVUs", aggfunc="sum")
+            chart = long.pivot_table(index="Order", columns="Fiscal Year", values="RVUs", aggfunc="sum")
             chart.index = [months[int(i)] for i in chart.index]
             st.line_chart(chart)

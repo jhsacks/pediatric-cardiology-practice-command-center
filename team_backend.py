@@ -25,20 +25,19 @@ class TeamStore:
 
     def load(self, seed=None):
         if not self.file_id:
-            initial = deepcopy(seed or {})
-            initial.setdefault("initiatives", [])
-            initial.setdefault("decisions", [])
-            initial.setdefault("roadmap", [])
-            initial.setdefault("growth", [])
-            initial.setdefault("clinical_intelligence", {"items": []})
-            initial.setdefault("rvu_metrics", {})
-            initial["updated_at_utc"] = datetime.now(timezone.utc).isoformat()
-            self.save(initial)
-            return initial
-        content = self.service.files().get_media(fileId=self.file_id).execute()
-        if isinstance(content, bytes):
-            content = content.decode("utf-8")
-        return json.loads(content)
+            data = deepcopy(seed or {})
+            data.setdefault("initiatives", [])
+            data.setdefault("decisions", [])
+            data.setdefault("roadmap", [])
+            data.setdefault("growth", [])
+            data.setdefault("clinical_intelligence", {"items": []})
+            data.setdefault("rvu_metrics", {})
+            self.save(data)
+            return data
+        body = self.service.files().get_media(fileId=self.file_id).execute()
+        if isinstance(body, bytes):
+            body = body.decode("utf-8")
+        return json.loads(body)
 
     def save(self, data):
         data["updated_at_utc"] = datetime.now(timezone.utc).isoformat()
@@ -57,27 +56,16 @@ class TeamStore:
             if str(item.get("id")) != str(initiative_id):
                 continue
             history = item.setdefault("history", [])
-            for field, new_value in changes.items():
-                old_value = item.get(field)
-                if old_value != new_value:
-                    history.append({
-                        "timestamp_utc": datetime.now(timezone.utc).isoformat(),
-                        "actor_name": actor.get("name", ""),
-                        "actor_email": actor.get("email", ""),
-                        "field": field,
-                        "old_value": old_value,
-                        "new_value": new_value,
-                    })
-                    item[field] = new_value
-            if item.get("status") == "Complete":
-                item["progress"] = 100
-                item["archived"] = True
-            if int(item.get("progress", 0) or 0) == 100:
-                item["status"] = "Complete"
-                item["archived"] = True
+            for field, value in changes.items():
+                previous = item.get(field)
+                if previous != value:
+                    history.append({"timestamp_utc": datetime.now(timezone.utc).isoformat(), "actor_name": actor["name"], "actor_email": actor["email"], "field": field, "old_value": previous, "new_value": value})
+                    item[field] = value
+            if item.get("status") == "Complete" or int(item.get("progress", 0) or 0) == 100:
+                item.update(status="Complete", progress=100, archived=True)
             if item.get("status") == "Cancelled":
                 item["archived"] = True
-            item["last_update"] = datetime.now(timezone.utc).date().isoformat()
+            item["team_updated_at_utc"] = datetime.now(timezone.utc).isoformat()
             self.save(data)
             return True
         return False
@@ -86,12 +74,8 @@ class TeamStore:
         data = self.load()
         for item in data.get("initiatives", []):
             if str(item.get("id")) == str(initiative_id):
-                item.setdefault("comments", []).append({
-                    "timestamp_utc": datetime.now(timezone.utc).isoformat(),
-                    "author_name": actor.get("name", ""),
-                    "author_email": actor.get("email", ""),
-                    "comment": comment.strip(),
-                })
+                item.setdefault("comments", []).append({"timestamp_utc": datetime.now(timezone.utc).isoformat(), "author_name": actor["name"], "author_email": actor["email"], "comment": comment.strip()})
+                item["team_updated_at_utc"] = datetime.now(timezone.utc).isoformat()
                 self.save(data)
                 return True
         return False

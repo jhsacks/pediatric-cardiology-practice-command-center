@@ -42,8 +42,8 @@ class TeamStore:
 
     def save(self, data):
         data["updated_at_utc"] = datetime.now(timezone.utc).isoformat()
-        body = json.dumps(data, indent=2, ensure_ascii=False, default=str).encode("utf-8")
-        media = MediaIoBaseUpload(io.BytesIO(body), mimetype="application/json", resumable=False)
+        payload = json.dumps(data, indent=2, ensure_ascii=False, default=str).encode("utf-8")
+        media = MediaIoBaseUpload(io.BytesIO(payload), mimetype="application/json", resumable=False)
         if self.file_id:
             self.service.files().update(fileId=self.file_id, media_body=media).execute()
         else:

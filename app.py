@@ -280,11 +280,17 @@ elif page == "Initiatives":
 
 elif page == "Decisions":
     frame = pd.DataFrame(visible_records(extra.get("decisions", []), "Private"))
-    st.dataframe(frame, hide_index=True, use_container_width=True) if not frame.empty else st.info("No practice decisions.")
+    if frame.empty:
+        st.info("No practice decisions.")
+    else:
+        st.dataframe(frame, hide_index=True, use_container_width=True)
 
 elif page == "Roadmap":
     frame = pd.DataFrame(visible_records(extra.get("roadmap", []), "Private"))
-    st.dataframe(frame, hide_index=True, use_container_width=True) if not frame.empty else st.info("No roadmap items.")
+    if frame.empty:
+        st.info("No roadmap items.")
+    else:
+        st.dataframe(frame, hide_index=True, use_container_width=True)
 
 elif page == "Clinical Intelligence":
     items = extra.get("clinical_intelligence", {}).get("items", [])
@@ -306,7 +312,10 @@ elif page == "Clinical Intelligence":
 
 elif page == "Practice Growth":
     frame = pd.DataFrame(visible_records(extra.get("growth", []), "Practice"))
-    st.dataframe(frame, hide_index=True, use_container_width=True) if not frame.empty else st.info("No growth data.")
+    if frame.empty:
+        st.info("No growth data.")
+    else:
+        st.dataframe(frame, hide_index=True, use_container_width=True)
 
 elif page == "Physician RVUs":
     rvu = extra.get("rvu_metrics", {})

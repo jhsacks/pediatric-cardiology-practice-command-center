@@ -5,374 +5,168 @@ from datetime import date, timedelta
 import pandas as pd
 import streamlit as st
 
+from vacation_manager import away_details, away_doctors, ensure_vacation_data, observance_text, render_vacation_planner, vacation_summary
+
 DEFAULT_DOCTORS = ["Jeffrey Sacks", "Luv Makadia", "Yoni Yaari"]
 WEEKDAYS = ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday"]
 WEEKEND_DAYS = {"Friday", "Saturday", "Sunday"}
-CALL_TYPES = ["Full Day", "Split"]
 SCOPES = ["One date", "All matching weekdays", "Remaining matching weekdays"]
 
 
+def nth_weekday(year, month, weekday, n):
+    return [date(year, month, day) for day in range(1, calendar.monthrange(year, month)[1] + 1) if date(year, month, day).weekday() == weekday][n - 1]
+
+
+def last_weekday(year, month, weekday):
+    return [date(year, month, day) for day in range(1, calendar.monthrange(year, month)[1] + 1) if date(year, month, day).weekday() == weekday][-1]
+
+
 def holiday_dates(year):
-    def nth_weekday(month, weekday, n):
-        hits = []
-        for day in range(1, calendar.monthrange(year, month)[1] + 1):
-            candidate = date(year, month, day)
-            if candidate.weekday() == weekday:
-                hits.append(candidate)
-        return hits[n - 1]
-
-    def last_weekday(month, weekday):
-        for day in range(calendar.monthrange(year, month)[1], 0, -1):
-            candidate = date(year, month, day)
-            if candidate.weekday() == weekday:
-                return candidate
-
-    return {
-        date(year, 1, 1): "New Year's Day",
-        nth_weekday(1, calendar.MONDAY, 3): "MLK Day",
-        last_weekday(5, calendar.MONDAY): "Memorial Day",
-        date(year, 7, 4): "Fourth of July",
-        nth_weekday(9, calendar.MONDAY, 1): "Labor Day",
-        nth_weekday(11, calendar.THURSDAY, 4): "Thanksgiving",
-        date(year, 12, 24): "Christmas Eve",
-        date(year, 12, 25): "Christmas Day",
-        date(year, 12, 31): "New Year's Eve",
-    }
-
-
-def empty_year(year):
-    holidays = holiday_dates(year)
-    start = date(year, 1, 1)
-    return [{
-        "Date": (start + timedelta(days=offset)).isoformat(),
-        "Day": (start + timedelta(days=offset)).strftime("%A"),
-        "Holiday": holidays.get(start + timedelta(days=offset), ""),
-        "Call Type": "Full Day",
-        "Full Day": "",
-        "Morning": "",
-        "Evening": "",
-        "Vacation Doctors": "",
-        "Notes": "",
-    } for offset in range((date(year + 1, 1, 1) - start).days)]
+    return {date(year, 1, 1): "New Year's Day", nth_weekday(year, 1, calendar.MONDAY, 3): "MLK Day", last_weekday(year, 5, calendar.MONDAY): "Memorial Day", date(year, 7, 4): "Fourth of July", nth_weekday(year, 9, calendar.MONDAY, 1): "Labor Day", nth_weekday(year, 11, calendar.THURSDAY, 4): "Thanksgiving", date(year, 12, 24): "Christmas Eve", date(year, 12, 25): "Christmas Day", date(year, 12, 31): "New Year's Eve"}
 
 
 def default_templates():
     return [
-        {"Template": "Sacks AM / Yaari PM", "Call Type": "Split", "Full Day": "", "Morning": "Jeffrey Sacks", "Evening": "Yoni Yaari"},
-        {"Template": "Yaari AM / Sacks PM", "Call Type": "Split", "Full Day": "", "Morning": "Yoni Yaari", "Evening": "Jeffrey Sacks"},
-        {"Template": "Full Day Sacks", "Call Type": "Full Day", "Full Day": "Jeffrey Sacks", "Morning": "", "Evening": ""},
-        {"Template": "Full Day Makadia", "Call Type": "Full Day", "Full Day": "Luv Makadia", "Morning": "", "Evening": ""},
-        {"Template": "Full Day Yaari", "Call Type": "Full Day", "Full Day": "Yoni Yaari", "Morning": "", "Evening": ""},
+        {"Call": "Sacks AM / Yaari PM", "Full Day": "", "Morning": "Jeffrey Sacks", "Evening": "Yoni Yaari"},
+        {"Call": "Yaari AM / Sacks PM", "Full Day": "", "Morning": "Yoni Yaari", "Evening": "Jeffrey Sacks"},
+        {"Call": "Sacks AM / Makadia PM", "Full Day": "", "Morning": "Jeffrey Sacks", "Evening": "Luv Makadia"},
+        {"Call": "Makadia AM / Yaari PM", "Full Day": "", "Morning": "Luv Makadia", "Evening": "Yoni Yaari"},
+        {"Call": "Yaari AM / Makadia PM", "Full Day": "", "Morning": "Yoni Yaari", "Evening": "Luv Makadia"},
+        {"Call": "Full Day Sacks", "Full Day": "Jeffrey Sacks", "Morning": "", "Evening": ""},
+        {"Call": "Full Day Makadia", "Full Day": "Luv Makadia", "Morning": "", "Evening": ""},
+        {"Call": "Full Day Yaari", "Full Day": "Yoni Yaari", "Morning": "", "Evening": ""},
     ]
 
 
+def empty_year(year):
+    start = date(year, 1, 1); holidays = holiday_dates(year); rows = []
+    for offset in range((date(year + 1, 1, 1) - start).days):
+        current = start + timedelta(days=offset)
+        rows.append({"Date": current.isoformat(), "Day": current.strftime("%A"), "Holiday": holidays.get(current, ""), "Call": "Unassigned", "Notes": ""})
+    return rows
+
+
 def default_store():
-    return {
-        "doctors": [{"Doctor": name, "Vacation Allocation": 0.0, "Active": True} for name in DEFAULT_DOCTORS],
-        "years": {"2027": empty_year(2027)},
-        "owed_calls": [],
-        "templates": default_templates(),
-        "holiday_history": [
-            {"Year": 2026, "Holiday": "Christmas Day", "Doctor": "Jeffrey Sacks", "Credit": 1.0},
-            {"Year": 2026, "Holiday": "New Year's Day", "Doctor": "Yoni Yaari", "Credit": 1.0},
-            {"Year": 2026, "Holiday": "Thanksgiving", "Doctor": "Luv Makadia", "Credit": 1.0},
-        ],
-    }
+    return {"doctors": [{"Doctor": doctor, "Vacation Allocation": 0.0, "Active": True} for doctor in DEFAULT_DOCTORS], "years": {"2027": empty_year(2027)}, "owed_calls": [], "call_templates": default_templates(), "holiday_history": [{"Year": 2026, "Holiday": "Christmas Day", "Doctor": "Jeffrey Sacks", "Credit": 1.0}, {"Year": 2026, "Holiday": "New Year's Day", "Doctor": "Yoni Yaari", "Credit": 1.0}, {"Year": 2026, "Holiday": "Thanksgiving", "Doctor": "Luv Makadia", "Credit": 1.0}]}
+
+
+def template_from_legacy(row):
+    if row.get("Call") and row.get("Call") != "Unassigned": return row["Call"]
+    if row.get("Pattern") and row.get("Pattern") != "Custom": return row["Pattern"]
+    if row.get("Call Type") == "Split":
+        morning = row.get("Morning", ""); evening = row.get("Evening", "")
+        for template in default_templates():
+            if template["Morning"] == morning and template["Evening"] == evening: return template["Call"]
+    full = row.get("Full Day", "")
+    for template in default_templates():
+        if full and template["Full Day"] == full: return template["Call"]
+    return "Unassigned"
 
 
 def ensure_store(extra):
     store = extra.setdefault("call_schedule", default_store())
-    for key, value in default_store().items():
-        store.setdefault(key, deepcopy(value))
+    defaults = default_store()
+    for key, value in defaults.items(): store.setdefault(key, deepcopy(value))
+    if "templates" in store and "call_templates" not in store:
+        store["call_templates"] = [{"Call": row.get("Template", ""), "Full Day": row.get("Full Day", ""), "Morning": row.get("Morning", ""), "Evening": row.get("Evening", "")} for row in store["templates"]]
+    for year_key, rows in store.get("years", {}).items():
+        for row in rows:
+            row["Call"] = template_from_legacy(row)
+            for duplicate in ["Pattern", "Call Type", "Full Day", "Morning", "Evening", "Vacation Doctors", "Vacation Details", "Observances", "Call Credits", "Schedule Issues"]: row.pop(duplicate, None)
+    ensure_vacation_data(store)
     return store
 
 
-def doctor_names(store):
-    return [str(row.get("Doctor", "")).strip() for row in store.get("doctors", []) if row.get("Active", True) and str(row.get("Doctor", "")).strip()]
+def doctor_names(store): return [str(row.get("Doctor", "")).strip() for row in store["doctors"] if row.get("Active", True) and str(row.get("Doctor", "")).strip()]
+
+def call_options(store): return ["Unassigned"] + [str(row.get("Call", "")).strip() for row in store.get("call_templates", []) if str(row.get("Call", "")).strip()]
+
+def template_map(store): return {str(row.get("Call", "")): row for row in store.get("call_templates", [])}
 
 
-def vacation_names(value):
-    return {name.strip() for name in str(value or "").split(",") if name.strip()}
+def call_parts(store, call_name):
+    template = template_map(store).get(str(call_name), {})
+    if template.get("Full Day"): return [(template["Full Day"], 1.0)]
+    return [(doctor, 0.5) for doctor in [template.get("Morning"), template.get("Evening")] if doctor]
 
 
-def normalize_row(row):
-    result = dict(row)
-    if result.get("Call Type") == "Split":
-        result["Full Day"] = ""
-    else:
-        result["Morning"] = ""
-        result["Evening"] = ""
-    return result
+def display_frame(store, year):
+    base = deepcopy(store.get("years", {}).get(str(year), empty_year(year))); rows = []
+    for row in base:
+        current = date.fromisoformat(str(row["Date"])); calls = call_parts(store, row.get("Call")); away = away_doctors(store, current); conflicts = sorted({doctor for doctor, _ in calls if doctor in away}); issues = []
+        if not calls: issues.append("Unassigned call")
+        if conflicts: issues.append("Call/vacation: " + ", ".join(conflicts))
+        if row.get("Holiday") and not calls: issues.append("Unassigned holiday")
+        rows.append({"Date": current, "Day": row.get("Day", current.strftime("%A")), "Holiday": row.get("Holiday", ""), "Observances": observance_text(store, current), "Call": row.get("Call", "Unassigned"), "Vacation": "; ".join(away_details(store, current)), "Notes": row.get("Notes", ""), "Call Credits": ", ".join(f"{doctor}: {credit:g}" for doctor, credit in calls), "Schedule Issues": "; ".join(issues)})
+    return pd.DataFrame(rows)
 
 
-def call_credits(row):
-    normalized = normalize_row(row)
-    if normalized.get("Call Type") == "Split":
-        credits = []
-        if normalized.get("Morning"):
-            credits.append((normalized["Morning"], 0.5))
-        if normalized.get("Evening"):
-            credits.append((normalized["Evening"], 0.5))
-        return credits
-    return [(normalized.get("Full Day"), 1.0)] if normalized.get("Full Day") else []
-
-
-def credit_text(row):
-    return ", ".join(f"{doctor}: {credit:g}" for doctor, credit in call_credits(row))
-
-
-def issue_text(row):
-    issues = []
-    if row.get("Call Type") == "Full Day" and (row.get("Morning") or row.get("Evening")):
-        issues.append("Full Day with morning/evening values")
-    if row.get("Call Type") == "Split" and row.get("Full Day"):
-        issues.append("Split with full-day value")
-    if not call_credits(row):
-        issues.append("Unassigned call")
-    vacations = vacation_names(row.get("Vacation Doctors"))
-    conflicts = sorted({doctor for doctor, _ in call_credits(row) if doctor in vacations})
-    if conflicts:
-        issues.append("Call/vacation: " + ", ".join(conflicts))
-    if row.get("Holiday") and not call_credits(row):
-        issues.append("Unassigned holiday")
-    return "; ".join(issues)
-
-
-def schedule_frame(store, year):
-    frame = pd.DataFrame(deepcopy(store.get("years", {}).get(str(year), empty_year(year))))
-    frame["Date"] = pd.to_datetime(frame["Date"], errors="coerce").dt.date
-    frame["Call Credits"] = frame.apply(credit_text, axis=1)
-    frame["Schedule Issues"] = frame.apply(issue_text, axis=1)
-    return frame
-
-
-def call_summary(frame, doctors):
+def call_summary(frame, store, doctors):
     totals = {doctor: {"Weekday": 0.0, "Weekend": 0.0, "Holiday": 0.0, "Total": 0.0} for doctor in doctors}
     for _, row in frame.iterrows():
         bucket = "Weekend" if row["Day"] in WEEKEND_DAYS else "Weekday"
-        for doctor, credit in call_credits(row):
-            totals.setdefault(doctor, {"Weekday": 0.0, "Weekend": 0.0, "Holiday": 0.0, "Total": 0.0})
-            totals[doctor][bucket] += credit
-            totals[doctor]["Total"] += credit
-            if row.get("Holiday"):
-                totals[doctor]["Holiday"] += credit
+        for doctor, credit in call_parts(store, row["Call"]):
+            totals.setdefault(doctor, {"Weekday": 0.0, "Weekend": 0.0, "Holiday": 0.0, "Total": 0.0}); totals[doctor][bucket] += credit; totals[doctor]["Total"] += credit
+            if row["Holiday"]: totals[doctor]["Holiday"] += credit
     return pd.DataFrame([{"Doctor": doctor, **values} for doctor, values in totals.items()])
 
 
-def vacation_summary(frame, store):
-    used = {doctor: 0.0 for doctor in doctor_names(store)}
-    for value in frame.get("Vacation Doctors", pd.Series(dtype=str)):
-        for doctor in vacation_names(value):
-            used[doctor] = used.get(doctor, 0.0) + 1.0
-    allocation = {row.get("Doctor"): float(row.get("Vacation Allocation", 0) or 0) for row in store.get("doctors", [])}
-    return pd.DataFrame([{"Doctor": doctor, "Allocated": allocation.get(doctor, 0.0), "Used": count, "Remaining": allocation.get(doctor, 0.0) - count} for doctor, count in used.items()])
-
-
-def holiday_assignments(frame):
-    rows = []
-    for _, row in frame[frame["Holiday"].astype(str).str.len() > 0].iterrows():
-        credits = call_credits(row)
-        if not credits:
-            rows.append({"Date": row["Date"], "Holiday": row["Holiday"], "Doctor": "Unassigned", "Credit": 0.0})
-        for doctor, credit in credits:
-            rows.append({"Date": row["Date"], "Holiday": row["Holiday"], "Doctor": doctor, "Credit": credit})
-    return pd.DataFrame(rows)
-
-
-def holiday_history_table(store, current=None):
-    rows = list(store.get("holiday_history", []))
-    if current is not None and not current.empty:
-        for _, row in current.iterrows():
-            rows.append({"Year": row["Date"].year, "Holiday": row["Holiday"], "Doctor": row["Doctor"], "Credit": row["Credit"]})
-    return pd.DataFrame(rows)
-
-
-def holiday_suggestions(store, frame, doctors):
-    history = holiday_history_table(store, holiday_assignments(frame))
-    suggestions = []
-    year = int(frame.iloc[0]["Date"].year)
-    for current, holiday in holiday_dates(year).items():
-        counts = {doctor: 0.0 for doctor in doctors}
-        if not history.empty:
-            for _, row in history[history["Holiday"] == holiday].iterrows():
-                if row["Doctor"] in counts:
-                    counts[row["Doctor"]] += float(row.get("Credit", 0) or 0)
-        minimum = min(counts.values()) if counts else 0
-        suggestions.append({"Holiday": holiday, "Date": current, "Suggested": ", ".join(doctor for doctor, count in counts.items() if count == minimum), "Historical Credits": "; ".join(f"{doctor}: {count:g}" for doctor, count in counts.items())})
-    return pd.DataFrame(suggestions)
-
-
-def dashboard(frame, doctors):
-    summary = call_summary(frame, doctors)
-    issues = frame[frame["Schedule Issues"].astype(str).str.len() > 0]
-    gaps = frame[frame.apply(lambda row: len(call_credits(row)) == 0, axis=1)]
-    conflicts = frame[frame["Schedule Issues"].astype(str).str.contains("Call/vacation", regex=False)]
-    cols = st.columns(5)
-    cols[0].metric("Unassigned dates", len(gaps))
-    cols[1].metric("Conflicts", len(conflicts))
-    cols[2].metric("Weekday credits", f"{summary['Weekday'].sum():g}")
-    cols[3].metric("Weekend credits", f"{summary['Weekend'].sum():g}")
-    cols[4].metric("Holiday credits", f"{summary['Holiday'].sum():g}")
-    return issues
+def dashboard(frame, store, doctors):
+    summary = call_summary(frame, store, doctors); columns = st.columns(5)
+    columns[0].metric("Unassigned dates", frame["Call"].eq("Unassigned").sum()); columns[1].metric("Conflicts", frame["Schedule Issues"].str.contains("Call/vacation", regex=False).sum()); columns[2].metric("Weekday credits", f"{summary['Weekday'].sum():g}"); columns[3].metric("Weekend credits", f"{summary['Weekend'].sum():g}"); columns[4].metric("Holiday credits", f"{summary['Holiday'].sum():g}")
 
 
 def render_readonly(store):
-    years = sorted(int(year) for year in store.get("years", {}) if str(year).isdigit())
-    if not years:
-        st.info("No call schedule years are available.")
-        return
-    year = st.selectbox("Calendar year", years, index=len(years) - 1, key="practice_schedule_year")
-    doctors = doctor_names(store)
-    frame = schedule_frame(store, year)
-    issues = dashboard(frame, doctors)
-    tabs = st.tabs(["Calendar", "Schedule Issues", "Call Equity", "Vacation", "Owed Call", "Holidays"])
-    with tabs[0]:
-        st.dataframe(frame, hide_index=True, use_container_width=True)
+    years = sorted(int(year) for year in store["years"] if str(year).isdigit()); year = st.selectbox("Calendar year", years, index=len(years) - 1, key="practice_schedule_year"); doctors = doctor_names(store); frame = display_frame(store, year); dashboard(frame, store, doctors); tabs = st.tabs(["Calendar", "Schedule Issues", "Call Equity", "Vacation", "Owed Call", "Holidays"])
+    with tabs[0]: st.dataframe(frame[["Date", "Day", "Holiday", "Observances", "Call", "Vacation", "Notes"]], hide_index=True, use_container_width=True)
     with tabs[1]:
-        if issues.empty:
-            st.success("No schedule issues.")
-        else:
-            st.dataframe(issues[["Date", "Day", "Holiday", "Schedule Issues", "Notes"]], hide_index=True, use_container_width=True)
-    with tabs[2]:
-        st.dataframe(call_summary(frame, doctors), hide_index=True, use_container_width=True)
-    with tabs[3]:
-        st.dataframe(vacation_summary(frame, store), hide_index=True, use_container_width=True)
+        issues = frame[frame["Schedule Issues"].str.len() > 0]; st.dataframe(issues[["Date", "Schedule Issues", "Notes"]], hide_index=True, use_container_width=True) if not issues.empty else st.success("No schedule issues.")
+    with tabs[2]: st.dataframe(call_summary(frame, store, doctors), hide_index=True, use_container_width=True)
+    with tabs[3]: st.dataframe(vacation_summary(store), hide_index=True, use_container_width=True)
     with tabs[4]:
-        owed = pd.DataFrame(store.get("owed_calls", []))
-        if owed.empty:
-            st.info("No owed calls recorded.")
-        else:
-            st.dataframe(owed, hide_index=True, use_container_width=True)
+        owed = pd.DataFrame(store.get("owed_calls", [])); st.dataframe(owed, hide_index=True, use_container_width=True) if not owed.empty else st.info("No owed calls recorded.")
     with tabs[5]:
-        st.dataframe(holiday_assignments(frame), hide_index=True, use_container_width=True)
-        st.subheader("Holiday History")
-        st.dataframe(holiday_history_table(store), hide_index=True, use_container_width=True)
+        holidays = frame[frame["Holiday"].str.len() > 0][["Date", "Holiday", "Call"]]; st.dataframe(holidays, hide_index=True, use_container_width=True); st.dataframe(pd.DataFrame(store.get("holiday_history", [])), hide_index=True, use_container_width=True)
 
 
 def render_editor(extra, save_extra, log_activity=None):
-    store = ensure_store(extra)
-    st.header("Call & Vacation Scheduler")
-    years = sorted(int(year) for year in store.get("years", {}) if str(year).isdigit())
-    top = st.columns(3)
-    year = top[0].selectbox("Calendar year", years, index=len(years) - 1, key="editor_schedule_year")
-    new_year = top[1].number_input("Add year", min_value=2027, max_value=2100, value=max(years) + 1, step=1)
-    if top[2].button("Add Calendar Year"):
-        store["years"].setdefault(str(int(new_year)), empty_year(int(new_year)))
-        save_extra(extra)
-        st.rerun()
-
-    doctors = doctor_names(store)
-    frame = schedule_frame(store, year)
-    issues = dashboard(frame, doctors)
-    tabs = st.tabs(["Schedule", "Quick Assign", "Doctors & Vacation", "Owed Call", "Equity", "Holidays", "Schedule Issues"])
-
+    store = ensure_store(extra); st.header("Call & Vacation Scheduler"); years = sorted(int(year) for year in store["years"] if str(year).isdigit()); top = st.columns(3); year = top[0].selectbox("Calendar year", years, index=len(years)-1, key="editor_schedule_year"); new_year = top[1].number_input("Add year", 2027, 2100, max(years)+1, 1)
+    if top[2].button("Add Calendar Year"): store["years"].setdefault(str(int(new_year)), empty_year(int(new_year))); ensure_vacation_data(store); save_extra(extra); st.rerun()
+    doctors = doctor_names(store); frame = display_frame(store, year); dashboard(frame, store, doctors); tabs = st.tabs(["Schedule", "Quick Assign", "Vacation Planner", "Doctors", "Owed Call", "Equity", "Holidays", "Schedule Issues"])
     with tabs[0]:
-        options = [""] + doctors
-        edited = st.data_editor(
-            frame.drop(columns=["Call Credits", "Schedule Issues"]),
-            hide_index=True,
-            use_container_width=True,
-            key=f"schedule_v3_{year}",
-            disabled=["Date", "Day", "Holiday"],
-            column_config={
-                "Date": st.column_config.DateColumn("Date"),
-                "Call Type": st.column_config.SelectboxColumn("Call Type", options=CALL_TYPES),
-                "Full Day": st.column_config.SelectboxColumn("Full Day", options=options),
-                "Morning": st.column_config.SelectboxColumn("Morning", options=options),
-                "Evening": st.column_config.SelectboxColumn("Evening", options=options),
-                "Vacation Doctors": st.column_config.TextColumn("Vacation Doctors", help="Comma-separated doctor names"),
-            },
-        )
-        preview = edited.copy()
-        preview["Call Credits"] = preview.apply(credit_text, axis=1)
-        preview["Schedule Issues"] = preview.apply(issue_text, axis=1)
-        st.subheader("Assignment Preview")
-        st.dataframe(preview[["Date", "Call Credits", "Schedule Issues"]], hide_index=True, use_container_width=True)
+        visible = frame[["Date", "Day", "Holiday", "Observances", "Call", "Vacation", "Notes"]]
+        edited = st.data_editor(visible, hide_index=True, use_container_width=True, key=f"canonical_schedule_{year}", disabled=["Date", "Day", "Holiday", "Observances", "Vacation"], column_config={"Date": st.column_config.DateColumn("Date"), "Call": st.column_config.SelectboxColumn("Call", options=call_options(store))})
         if st.button("Save Annual Schedule", type="primary"):
-            cleaned = pd.DataFrame([normalize_row(row) for row in edited.to_dict("records")])
-            cleaned["Date"] = cleaned["Date"].astype(str)
-            store["years"][str(year)] = cleaned.where(pd.notna(cleaned), "").to_dict("records")
+            by_date = {str(row["Date"]): row for row in store["years"][str(year)]}
+            for row in edited.to_dict("records"):
+                key = str(row["Date"]); target = by_date[key]; target["Call"] = row.get("Call", "Unassigned"); target["Notes"] = row.get("Notes", "")
             save_extra(extra)
-            if log_activity:
-                log_activity(f"Updated {year} call and vacation schedule")
+            if log_activity: log_activity(f"Updated {year} call schedule")
             st.rerun()
-
     with tabs[1]:
-        templates = pd.DataFrame(store.get("templates", default_templates()))
-        template_names = templates["Template"].tolist()
-        selected_name = st.selectbox("Favorite pattern", template_names)
-        selected_template = templates[templates["Template"] == selected_name].iloc[0].to_dict()
-        c1, c2, c3 = st.columns(3)
-        target_date = c1.date_input("Starting date", value=date(year, 1, 2), min_value=date(year, 1, 1), max_value=date(year, 12, 31))
-        weekday = c2.selectbox("Day of week", WEEKDAYS, index=5)
-        scope = c3.selectbox("Apply to", SCOPES, index=1)
-        st.info(f"{selected_name}: {credit_text(selected_template)}")
-        if st.button("Apply Favorite Pattern", type="primary"):
+        templates = pd.DataFrame(store["call_templates"]); selected = st.selectbox("Call", call_options(store)[1:]); a, b, c = st.columns(3); start = a.date_input("Starting date", date(year, 1, 2), min_value=date(year, 1, 1), max_value=date(year, 12, 31)); weekday = b.selectbox("Day of week", WEEKDAYS, index=5); scope = c.selectbox("Apply to", SCOPES, index=1)
+        if st.button("Apply Call", type="primary"):
             for row in store["years"][str(year)]:
-                row_date = date.fromisoformat(row["Date"])
-                match = False
-                if scope == "One date":
-                    match = row_date == target_date
-                elif scope == "All matching weekdays":
-                    match = row["Day"] == weekday
-                else:
-                    match = row["Day"] == weekday and row_date >= target_date
-                if match:
-                    row.update({key: selected_template.get(key, "") for key in ["Call Type", "Full Day", "Morning", "Evening"]})
-                    row.update(normalize_row(row))
-            save_extra(extra)
-            st.rerun()
-        st.subheader("Manage Favorite Patterns")
-        edited_templates = st.data_editor(templates, hide_index=True, use_container_width=True, num_rows="dynamic", key="call_templates")
-        if st.button("Save Favorite Patterns"):
-            store["templates"] = [normalize_row(row) for row in edited_templates.where(pd.notna(edited_templates), "").to_dict("records")]
-            save_extra(extra)
-            st.rerun()
-
-    with tabs[2]:
-        roster = pd.DataFrame(store.get("doctors", []))
-        edited_roster = st.data_editor(roster, hide_index=True, use_container_width=True, num_rows="dynamic", key="doctor_roster_v3")
-        if st.button("Save Doctor Roster and Vacation Allocations"):
-            store["doctors"] = edited_roster.where(pd.notna(edited_roster), "").to_dict("records")
-            save_extra(extra)
-            st.rerun()
-        st.dataframe(vacation_summary(schedule_frame(store, year), store), hide_index=True, use_container_width=True)
-
+                current = date.fromisoformat(row["Date"]); match = current == start if scope == "One date" else row["Day"] == weekday if scope == "All matching weekdays" else row["Day"] == weekday and current >= start
+                if match: row["Call"] = selected
+            save_extra(extra); st.rerun()
+        st.subheader("Manage Calls"); changed = st.data_editor(templates, hide_index=True, use_container_width=True, num_rows="dynamic", key="canonical_calls")
+        if st.button("Save Calls"):
+            store["call_templates"] = changed.where(pd.notna(changed), "").to_dict("records"); valid = set(call_options(store))
+            for rows in store["years"].values():
+                for row in rows:
+                    if row.get("Call") not in valid: row["Call"] = "Unassigned"
+            save_extra(extra); st.rerun()
+    with tabs[2]: render_vacation_planner(store, year, doctors, lambda: save_extra(extra))
     with tabs[3]:
-        owed = pd.DataFrame(store.get("owed_calls", []))
-        if owed.empty:
-            owed = pd.DataFrame(columns=["Debtor", "Creditor", "Type", "Quantity", "Notes"])
-        edited_owed = st.data_editor(owed, hide_index=True, use_container_width=True, num_rows="dynamic", key="owed_v3", column_config={
-            "Debtor": st.column_config.SelectboxColumn("Debtor", options=doctors),
-            "Creditor": st.column_config.SelectboxColumn("Creditor", options=doctors),
-            "Type": st.column_config.SelectboxColumn("Type", options=["Weekday", "Weekend"]),
-            "Quantity": st.column_config.NumberColumn("Quantity", min_value=0.5, step=0.5),
-        })
-        if st.button("Save Owed Call Ledger"):
-            store["owed_calls"] = edited_owed.where(pd.notna(edited_owed), "").to_dict("records")
-            save_extra(extra)
-            st.rerun()
-
+        roster = pd.DataFrame(store["doctors"]); changed = st.data_editor(roster, hide_index=True, use_container_width=True, num_rows="dynamic", key="canonical_doctors")
+        if st.button("Save Doctors"): store["doctors"] = changed.where(pd.notna(changed), "").to_dict("records"); save_extra(extra); st.rerun()
     with tabs[4]:
-        st.dataframe(call_summary(schedule_frame(store, year), doctors), hide_index=True, use_container_width=True)
-
-    with tabs[5]:
-        fresh = schedule_frame(store, year)
-        st.subheader(f"{year} Holiday Assignments")
-        st.dataframe(holiday_assignments(fresh), hide_index=True, use_container_width=True)
-        st.subheader("Holiday Assignment Suggestions")
-        st.dataframe(holiday_suggestions(store, fresh, doctors), hide_index=True, use_container_width=True)
-        history = holiday_history_table(store)
-        edited_history = st.data_editor(history, hide_index=True, use_container_width=True, num_rows="dynamic", key="holiday_history_v3")
-        if st.button("Save Holiday History"):
-            store["holiday_history"] = edited_history.where(pd.notna(edited_history), "").to_dict("records")
-            save_extra(extra)
-            st.rerun()
-
+        owed = pd.DataFrame(store.get("owed_calls", [])) if store.get("owed_calls") else pd.DataFrame(columns=["Debtor", "Creditor", "Type", "Quantity", "Notes"]); changed = st.data_editor(owed, hide_index=True, use_container_width=True, num_rows="dynamic", key="canonical_owed", column_config={"Debtor": st.column_config.SelectboxColumn("Debtor", options=doctors), "Creditor": st.column_config.SelectboxColumn("Creditor", options=doctors), "Type": st.column_config.SelectboxColumn("Type", options=["Weekday", "Weekend"]), "Quantity": st.column_config.NumberColumn("Quantity", min_value=0.5, step=0.5)})
+        if st.button("Save Owed Calls"): store["owed_calls"] = changed.where(pd.notna(changed), "").to_dict("records"); save_extra(extra); st.rerun()
+    with tabs[5]: st.dataframe(call_summary(frame, store, doctors), hide_index=True, use_container_width=True)
     with tabs[6]:
-        current_issues = schedule_frame(store, year)
-        current_issues = current_issues[current_issues["Schedule Issues"].astype(str).str.len() > 0]
-        if current_issues.empty:
-            st.success("No schedule issues.")
-        else:
-            st.dataframe(current_issues[["Date", "Day", "Holiday", "Schedule Issues", "Notes"]], hide_index=True, use_container_width=True)
+        st.dataframe(frame[frame["Holiday"].str.len() > 0][["Date", "Holiday", "Call"]], hide_index=True, use_container_width=True); history = pd.DataFrame(store["holiday_history"]); changed = st.data_editor(history, hide_index=True, use_container_width=True, num_rows="dynamic", key="canonical_holiday_history")
+        if st.button("Save Holiday History"): store["holiday_history"] = changed.where(pd.notna(changed), "").to_dict("records"); save_extra(extra); st.rerun()
+    with tabs[7]:
+        issues = frame[frame["Schedule Issues"].str.len() > 0]; st.dataframe(issues[["Date", "Day", "Holiday", "Schedule Issues", "Notes"]], hide_index=True, use_container_width=True) if not issues.empty else st.success("No schedule issues.")

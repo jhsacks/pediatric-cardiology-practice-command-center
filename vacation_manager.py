@@ -1,6 +1,5 @@
 import calendar
-from copy import deepcopy
-from datetime import date, datetime, timedelta
+from datetime import date, timedelta
 
 import pandas as pd
 import streamlit as st
@@ -10,12 +9,13 @@ PORTION_CREDIT = {"Full Day": 1.0, "Morning": 0.5, "Afternoon": 0.5}
 
 
 def nth_weekday(year, month, weekday, n):
-    dates = [date(year, month, d) for d in range(1, calendar.monthrange(year, month)[1] + 1) if date(year, month, d).weekday() == weekday]
-    return dates[n - 1]
+    values = [date(year, month, day) for day in range(1, calendar.monthrange(year, month)[1] + 1) if date(year, month, day).weekday() == weekday]
+    return values[n - 1]
 
 
 def last_weekday(year, month, weekday):
-    return [date(year, month, d) for d in range(1, calendar.monthrange(year, month)[1] + 1) if date(year, month, d).weekday() == weekday][-1]
+    values = [date(year, month, day) for day in range(1, calendar.monthrange(year, month)[1] + 1) if date(year, month, day).weekday() == weekday]
+    return values[-1]
 
 
 def default_office_closures(year):
@@ -23,11 +23,11 @@ def default_office_closures(year):
         {"Date": date(year, 1, 1).isoformat(), "Reason": "New Year's Day", "Office Closed": True, "Notes": ""},
         {"Date": nth_weekday(year, 1, calendar.MONDAY, 3).isoformat(), "Reason": "MLK Day", "Office Closed": True, "Notes": ""},
         {"Date": last_weekday(year, 5, calendar.MONDAY).isoformat(), "Reason": "Memorial Day", "Office Closed": True, "Notes": ""},
-        {"Date": date(year, 7, 4).isoformat(), "Reason": "Fourth of July", "Office Closed": True, "Notes": "Observed date may be edited"},
+        {"Date": date(year, 7, 4).isoformat(), "Reason": "Fourth of July", "Office Closed": True, "Notes": "Observed date is editable"},
         {"Date": nth_weekday(year, 9, calendar.MONDAY, 1).isoformat(), "Reason": "Labor Day", "Office Closed": True, "Notes": ""},
         {"Date": nth_weekday(year, 11, calendar.THURSDAY, 4).isoformat(), "Reason": "Thanksgiving", "Office Closed": True, "Notes": ""},
         {"Date": date(year, 12, 24).isoformat(), "Reason": "Christmas Eve", "Office Closed": True, "Notes": ""},
-        {"Date": date(year, 12, 25).isoformat(), "Reason": "Christmas Day", "Office Closed": True, "Notes": "Observed date may be edited"},
+        {"Date": date(year, 12, 25).isoformat(), "Reason": "Christmas Day", "Office Closed": True, "Notes": "Observed date is editable"},
         {"Date": date(year, 12, 31).isoformat(), "Reason": "New Year's Eve", "Office Closed": True, "Notes": ""},
     ]
 
@@ -41,159 +41,124 @@ def easter_date(year):
     return date(year, month, day)
 
 
-def generated_observances(year):
+def default_observances(year):
     easter = easter_date(year)
-    values = [
-        {"Date": date(year, 1, 6).isoformat(), "Observance": "Epiphany", "Tradition": "Christian", "Office Closed": False},
-        {"Date": (easter - timedelta(days=46)).isoformat(), "Observance": "Ash Wednesday", "Tradition": "Christian", "Office Closed": False},
-        {"Date": (easter - timedelta(days=7)).isoformat(), "Observance": "Palm Sunday", "Tradition": "Christian", "Office Closed": False},
-        {"Date": (easter - timedelta(days=2)).isoformat(), "Observance": "Good Friday", "Tradition": "Christian", "Office Closed": False},
-        {"Date": easter.isoformat(), "Observance": "Easter", "Tradition": "Christian", "Office Closed": False},
-        {"Date": (easter + timedelta(days=49)).isoformat(), "Observance": "Pentecost", "Tradition": "Christian", "Office Closed": False},
-        {"Date": date(year, 2, 14).isoformat(), "Observance": "Valentine's Day", "Tradition": "American", "Office Closed": False},
-        {"Date": date(year, 6, 19).isoformat(), "Observance": "Juneteenth", "Tradition": "American", "Office Closed": False},
-        {"Date": date(year, 11, 11).isoformat(), "Observance": "Veterans Day", "Tradition": "American", "Office Closed": False},
+    items = [
+        {"Date": date(year, 1, 6).isoformat(), "Observance": "Epiphany", "Tradition": "Christian", "Notes": ""},
+        {"Date": (easter - timedelta(days=46)).isoformat(), "Observance": "Ash Wednesday", "Tradition": "Christian", "Notes": ""},
+        {"Date": (easter - timedelta(days=7)).isoformat(), "Observance": "Palm Sunday", "Tradition": "Christian", "Notes": ""},
+        {"Date": (easter - timedelta(days=2)).isoformat(), "Observance": "Good Friday", "Tradition": "Christian", "Notes": ""},
+        {"Date": easter.isoformat(), "Observance": "Easter", "Tradition": "Christian", "Notes": ""},
+        {"Date": (easter + timedelta(days=49)).isoformat(), "Observance": "Pentecost", "Tradition": "Christian", "Notes": ""},
+        {"Date": date(year, 6, 19).isoformat(), "Observance": "Juneteenth", "Tradition": "American", "Notes": ""},
+        {"Date": date(year, 11, 11).isoformat(), "Observance": "Veterans Day", "Tradition": "American", "Notes": ""},
+        {"Date": date(year, 1, 15).isoformat(), "Observance": "Pongal", "Tradition": "Indian/Hindu", "Notes": "Date may vary by community"},
     ]
     if year == 2027:
-        values.extend([
-            {"Date": "2027-01-23", "Observance": "Tu BiShvat", "Tradition": "Jewish", "Office Closed": False},
-            {"Date": "2027-03-23", "Observance": "Purim", "Tradition": "Jewish", "Office Closed": False},
-            {"Date": "2027-02-08", "Observance": "Ramadan begins (tentative)", "Tradition": "Muslim", "Office Closed": False},
-            {"Date": "2027-01-15", "Observance": "Pongal", "Tradition": "Indian/Hindu", "Office Closed": False},
-            {"Date": "2027-02-06", "Observance": "Lunar New Year", "Tradition": "Asian", "Office Closed": False},
-        ])
-    return values
+        items += [
+            {"Date": "2027-01-23", "Observance": "Tu BiShvat", "Tradition": "Jewish", "Notes": "Begins at sundown previously"},
+            {"Date": "2027-03-23", "Observance": "Purim", "Tradition": "Jewish", "Notes": "Begins at sundown previously"},
+            {"Date": "2027-04-22", "Observance": "Passover begins", "Tradition": "Jewish", "Notes": "Begins at sundown previously"},
+            {"Date": "2027-06-11", "Observance": "Shavuot", "Tradition": "Jewish", "Notes": "Begins at sundown previously"},
+            {"Date": "2027-10-02", "Observance": "Rosh Hashanah", "Tradition": "Jewish", "Notes": "Begins at sundown previously"},
+            {"Date": "2027-10-11", "Observance": "Yom Kippur", "Tradition": "Jewish", "Notes": "Begins at sundown previously"},
+            {"Date": "2027-12-25", "Observance": "Hanukkah begins", "Tradition": "Jewish", "Notes": "Begins at sundown previously"},
+            {"Date": "2027-02-08", "Observance": "Ramadan begins", "Tradition": "Muslim", "Notes": "Tentative; moon sighting may shift date"},
+            {"Date": "2027-03-09", "Observance": "Eid al-Fitr", "Tradition": "Muslim", "Notes": "Tentative; moon sighting may shift date"},
+            {"Date": "2027-05-16", "Observance": "Eid al-Adha", "Tradition": "Muslim", "Notes": "Tentative; moon sighting may shift date"},
+            {"Date": "2027-02-06", "Observance": "Lunar New Year", "Tradition": "Asian", "Notes": ""},
+        ]
+    return items
 
 
-def doctors_from_value(value):
+def doctors_list(value):
     if isinstance(value, list):
-        return [str(x).strip() for x in value if str(x).strip()]
-    return [x.strip() for x in str(value or "").split(",") if x.strip()]
+        return [str(item).strip() for item in value if str(item).strip()]
+    return [item.strip() for item in str(value or "").split(",") if item.strip()]
 
 
-def ensure_vacation_defaults(store):
+def ensure_vacation_data(store):
     store.setdefault("vacation_blocks", [])
-    closures = store.setdefault("office_closures", {})
-    observances = store.setdefault("observances", {})
-    for year_key, rows in store.get("years", {}).items():
-        if not str(year_key).isdigit():
-            continue
-        year = int(year_key)
-        closures.setdefault(str(year), default_office_closures(year))
-        observances.setdefault(str(year), generated_observances(year))
-        apply_vacations_and_observances(store, year)
+    store.setdefault("office_closures", {})
+    store.setdefault("observances", {})
+    for year_key in store.get("years", {}):
+        if str(year_key).isdigit():
+            year = int(year_key)
+            store["office_closures"].setdefault(str(year), default_office_closures(year))
+            store["observances"].setdefault(str(year), default_observances(year))
     return store
 
 
-def closed_dates(store, year):
-    return {
-        str(row.get("Date"))
-        for row in store.get("office_closures", {}).get(str(year), [])
-        if bool(row.get("Office Closed", False))
-    }
+def closed_date_set(store, year):
+    return {str(row.get("Date")) for row in store["office_closures"].get(str(year), []) if bool(row.get("Office Closed", False))}
 
 
-def eligible_vacation_credit(day, portion, closed):
-    if day.weekday() >= 5 or day.isoformat() in closed:
-        return 0.0
-    return PORTION_CREDIT.get(portion, 1.0)
-
-
-def apply_vacations_and_observances(store, year):
-    rows = store.get("years", {}).get(str(year), [])
-    if not rows:
-        return
-    blocks = store.get("vacation_blocks", [])
-    observances = store.get("observances", {}).get(str(year), [])
-    obs_by_date = {}
-    for obs in observances:
-        obs_by_date.setdefault(str(obs.get("Date")), []).append(str(obs.get("Observance", "")))
-    for row in rows:
-        row_date = date.fromisoformat(str(row["Date"]))
-        away = []
-        details = []
-        for block in blocks:
-            start = date.fromisoformat(str(block["Start Date"]))
-            end = date.fromisoformat(str(block["End Date"]))
-            if start <= row_date <= end:
-                for doctor in doctors_from_value(block.get("Doctors")):
-                    away.append(doctor)
-                    details.append(f"{doctor} ({block.get('Portion', 'Full Day')})")
-        row["Vacation Doctors"] = ", ".join(sorted(set(away)))
-        row["Vacation Details"] = "; ".join(details)
-        row["Observances"] = "; ".join(x for x in obs_by_date.get(row_date.isoformat(), []) if x)
-        user_notes = str(row.get("Notes", ""))
-        row["Notes"] = user_notes
-
-
-def vacation_summary_v2(frame, store):
-    ensure_vacation_defaults(store)
-    allocations = {str(x.get("Doctor")): float(x.get("Vacation Allocation", 0) or 0) for x in store.get("doctors", [])}
-    used = {doctor: 0.0 for doctor in allocations}
-    full = {doctor: 0 for doctor in allocations}
-    half = {doctor: 0 for doctor in allocations}
+def away_details(store, day):
+    values = []
     for block in store.get("vacation_blocks", []):
         start = date.fromisoformat(str(block["Start Date"])); end = date.fromisoformat(str(block["End Date"]))
-        portion = str(block.get("Portion", "Full Day"))
-        current = start
+        if start <= day <= end:
+            for doctor in doctors_list(block.get("Doctors")):
+                values.append(f"{doctor} ({block.get('Portion', 'Full Day')})")
+    return values
+
+
+def away_doctors(store, day):
+    return sorted({value.split(" (")[0] for value in away_details(store, day)})
+
+
+def observance_text(store, day):
+    return "; ".join(str(row.get("Observance", "")) for row in store["observances"].get(str(day.year), []) if str(row.get("Date")) == day.isoformat() and str(row.get("Observance", "")))
+
+
+def vacation_summary(store):
+    ensure_vacation_data(store)
+    allocations = {str(row.get("Doctor")): float(row.get("Vacation Allocation", 0) or 0) for row in store.get("doctors", [])}
+    used = {doctor: 0.0 for doctor in allocations}; full = {doctor: 0 for doctor in allocations}; half = {doctor: 0 for doctor in allocations}
+    for block in store.get("vacation_blocks", []):
+        start = date.fromisoformat(str(block["Start Date"])); end = date.fromisoformat(str(block["End Date"])); portion = str(block.get("Portion", "Full Day")); current = start
         while current <= end:
-            closed = closed_dates(store, current.year)
-            credit = eligible_vacation_credit(current, portion, closed)
-            for doctor in doctors_from_value(block.get("Doctors")):
+            credit = 0.0 if current.weekday() >= 5 or current.isoformat() in closed_date_set(store, current.year) else PORTION_CREDIT.get(portion, 1.0)
+            for doctor in doctors_list(block.get("Doctors")):
                 used[doctor] = used.get(doctor, 0.0) + credit
                 if credit == 1.0: full[doctor] = full.get(doctor, 0) + 1
                 elif credit == 0.5: half[doctor] = half.get(doctor, 0) + 1
             current += timedelta(days=1)
-    return pd.DataFrame([
-        {"Doctor": doctor, "Allocated": allocated, "Full Days": full.get(doctor, 0), "Half Days": half.get(doctor, 0), "Used": used.get(doctor, 0.0), "Remaining": allocated - used.get(doctor, 0.0)}
-        for doctor, allocated in allocations.items()
-    ])
+    return pd.DataFrame([{"Doctor": doctor, "Allocated": allocation, "Full Days": full.get(doctor, 0), "Half Days": half.get(doctor, 0), "Used": used.get(doctor, 0.0), "Remaining": allocation - used.get(doctor, 0.0)} for doctor, allocation in allocations.items()])
 
 
 def render_vacation_planner(store, year, doctors, save_callback):
-    ensure_vacation_defaults(store)
+    ensure_vacation_data(store)
     st.subheader("Vacation Planner")
-    st.caption("Away dates include weekends for coverage awareness. Vacation balances charge only Monday-Friday office-open time.")
-    with st.form("add_vacation_block"):
+    st.caption("The full away range is visible for coverage. Only Monday-Friday office-open time is charged.")
+    with st.form("add_vacation_block_v2"):
         selected = st.multiselect("Doctors", doctors)
-        c1, c2, c3 = st.columns(3)
-        start = c1.date_input("Start date", value=date(year, 1, 1), min_value=date(year, 1, 1), max_value=date(year, 12, 31))
-        end = c2.date_input("End date", value=date(year, 1, 1), min_value=date(year, 1, 1), max_value=date(year, 12, 31))
-        portion = c3.selectbox("Day portion", PORTIONS)
-        notes = st.text_input("Vacation notes")
+        a, b, c = st.columns(3)
+        start = a.date_input("Start date", date(year, 1, 1), min_value=date(year, 1, 1), max_value=date(year, 12, 31))
+        end = b.date_input("End date", date(year, 1, 1), min_value=date(year, 1, 1), max_value=date(year, 12, 31))
+        portion = c.selectbox("Portion", PORTIONS)
+        notes = st.text_input("Notes")
         if st.form_submit_button("Add Vacation Block"):
             if selected and end >= start:
                 store["vacation_blocks"].append({"Doctors": selected, "Start Date": start.isoformat(), "End Date": end.isoformat(), "Portion": portion, "Notes": notes})
-                apply_vacations_and_observances(store, year)
-                save_callback()
-                st.rerun()
-            st.error("Select at least one doctor and a valid date range.")
-    blocks = pd.DataFrame(store.get("vacation_blocks", []))
-    if blocks.empty:
-        blocks = pd.DataFrame(columns=["Doctors", "Start Date", "End Date", "Portion", "Notes"])
-    edited = st.data_editor(blocks, hide_index=True, use_container_width=True, num_rows="dynamic", key="vacation_blocks_v1", column_config={"Portion": st.column_config.SelectboxColumn("Portion", options=PORTIONS)})
+                save_callback(); st.rerun()
+            st.error("Select at least one doctor and a valid range.")
+    blocks = pd.DataFrame(store["vacation_blocks"])
+    if blocks.empty: blocks = pd.DataFrame(columns=["Doctors", "Start Date", "End Date", "Portion", "Notes"])
+    changed = st.data_editor(blocks, hide_index=True, use_container_width=True, num_rows="dynamic", key="vacation_blocks_v2", column_config={"Portion": st.column_config.SelectboxColumn("Portion", options=PORTIONS)})
     if st.button("Save Vacation Blocks"):
-        records = edited.where(pd.notna(edited), "").to_dict("records")
-        for record in records:
-            if isinstance(record.get("Doctors"), str):
-                record["Doctors"] = doctors_from_value(record["Doctors"])
-        store["vacation_blocks"] = records
-        apply_vacations_and_observances(store, year)
-        save_callback(); st.rerun()
-    st.subheader(f"{year} Vacation Balance")
-    st.dataframe(vacation_summary_v2(pd.DataFrame(), store), hide_index=True, use_container_width=True)
+        records = changed.where(pd.notna(changed), "").to_dict("records")
+        for row in records: row["Doctors"] = doctors_list(row.get("Doctors"))
+        store["vacation_blocks"] = records; save_callback(); st.rerun()
+    st.dataframe(vacation_summary(store), hide_index=True, use_container_width=True)
     st.subheader("Office Closed Days")
-    closures = pd.DataFrame(store["office_closures"].get(str(year), default_office_closures(year)))
-    edited_closures = st.data_editor(closures, hide_index=True, use_container_width=True, num_rows="dynamic", key=f"closures_{year}")
+    closures = pd.DataFrame(store["office_closures"][str(year)])
+    changed_closures = st.data_editor(closures, hide_index=True, use_container_width=True, num_rows="dynamic", key=f"closed_{year}")
     if st.button("Save Office Closed Days"):
-        store["office_closures"][str(year)] = edited_closures.where(pd.notna(edited_closures), "").to_dict("records")
-        apply_vacations_and_observances(store, year)
-        save_callback(); st.rerun()
+        store["office_closures"][str(year)] = changed_closures.where(pd.notna(changed_closures), "").to_dict("records"); save_callback(); st.rerun()
     st.subheader("Cultural and Religious Observances")
-    st.caption("Reference only. These do not close the office unless separately added above. Lunar-calendar dates can vary by community or observation and remain editable.")
-    observances = pd.DataFrame(store["observances"].get(str(year), generated_observances(year)))
-    edited_obs = st.data_editor(observances, hide_index=True, use_container_width=True, num_rows="dynamic", key=f"observances_{year}")
+    st.caption("Reference only. These do not close the office. Lunar dates may vary and remain editable.")
+    observations = pd.DataFrame(store["observances"][str(year)])
+    changed_observances = st.data_editor(observations, hide_index=True, use_container_width=True, num_rows="dynamic", key=f"obs_{year}")
     if st.button("Save Observances"):
-        store["observances"][str(year)] = edited_obs.where(pd.notna(edited_obs), "").to_dict("records")
-        apply_vacations_and_observances(store, year)
-        save_callback(); st.rerun()
+        store["observances"][str(year)] = changed_observances.where(pd.notna(changed_observances), "").to_dict("records"); save_callback(); st.rerun()

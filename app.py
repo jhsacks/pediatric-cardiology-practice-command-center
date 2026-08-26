@@ -104,7 +104,7 @@ def render_initiative(item, user, store, roster):
 user = sign_in()
 roster = users()
 
-st.write("DEBUG FOLDER ID:", secret("GOOGLE_DRIVE_FOLDER_ID", "NOT_FOUND"))
+st.write("ALL SECRETS:", list(st.secrets.keys()))
 
 store = TeamStore(
     dict(st.secrets["google_service_account"]),

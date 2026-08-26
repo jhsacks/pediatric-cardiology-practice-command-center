@@ -108,7 +108,7 @@ st.write("ALL SECRETS:", list(st.secrets.keys()))
 
 store = TeamStore(
     dict(st.secrets["google_service_account"]),
-    secret("GOOGLE_DRIVE_FOLDER_ID", ""),
+    st.write(st.secrets["google_drive"]),
     secret("PRACTICE_TEAM_FILE_NAME", "practice_team_data.json")
 )
 

@@ -74,7 +74,13 @@ def ensure_store(extra):
 
 def roster(store): return [str(row.get("Doctor", "")).strip() for row in store["doctors"] if row.get("Active", True) and str(row.get("Doctor", "")).strip()]
 
-def call_choices(store): return ["Unassigned"] + [str(row.get("Call", "")).strip() for row in store["call_templates"] if str(row.get("Call", "")).strip()]
+def call_choices(store):
+    values = ["Unassigned"]
+    for row in store.get("call_templates", []):
+        value = str(row.get("Call", "")).strip()
+        if value and value != "Unassigned" and value not in values:
+            values.append(value)
+    return values
 
 def assignments(store, call):
     item = next((row for row in store["call_templates"] if row.get("Call") == call), {})
@@ -132,16 +138,48 @@ def render_editor(extra, save_extra, log_activity=None):
     with tabs[0]:
         vacation_controls(store, year, doctors, lambda: save_extra(extra))
         st.markdown("#### Daily schedule")
-        edited = st.data_editor(data[["Date", "Day", "Holiday", "Observances", "Call", "Vacation", "Notes"]], hide_index=True, use_container_width=True, key=f"main_schedule_{year}", disabled=["Date", "Day", "Holiday", "Observances", "Vacation"], column_config={"Date": st.column_config.DateColumn("Date"), "Call": st.column_config.SelectboxColumn("Call", options=call_choices(store))})
-        if st.button("Save Annual Schedule", type="primary"):
-            saved = {str(row["Date"]): row for row in store["years"][str(year)]}
-            for row in edited.to_dict("records"):
-                target = saved[str(row["Date"])]; target["Call"] = row.get("Call", "Unassigned"); target["Notes"] = row.get("Notes", "")
+        autosave = st.toggle("Auto-save schedule changes", value=True, key=f"schedule_autosave_{year}")
+        st.caption("Auto-save writes Call and Notes changes after each completed grid edit. Vacation, Quick Assign, office-closure, and observance actions already save when their action button is selected.")
+        edited = st.data_editor(
+            data[["Date", "Day", "Holiday", "Observances", "Call", "Vacation", "Notes"]],
+            hide_index=True,
+            use_container_width=True,
+            key=f"main_schedule_{year}",
+            disabled=["Date", "Day", "Holiday", "Observances", "Vacation"],
+            column_config={
+                "Date": st.column_config.DateColumn("Date"),
+                "Call": st.column_config.SelectboxColumn("Call", options=call_choices(store), required=True),
+            },
+        )
+        saved = {str(row["Date"]): row for row in store["years"][str(year)]}
+        pending = []
+        for row in edited.to_dict("records"):
+            key = str(row["Date"])
+            new_call = str(row.get("Call") or "Unassigned")
+            new_notes = str(row.get("Notes") or "")
+            target = saved.get(key)
+            if target and (str(target.get("Call") or "Unassigned") != new_call or str(target.get("Notes") or "") != new_notes):
+                pending.append((target, new_call, new_notes))
+        if pending and autosave:
+            for target, new_call, new_notes in pending:
+                target["Call"] = new_call
+                target["Notes"] = new_notes
             save_extra(extra)
-            if log_activity: log_activity(f"Updated {year} call and vacation schedule")
+            st.success(f"Auto-saved {len(pending)} schedule change(s).")
+        elif pending:
+            st.warning(f"{len(pending)} unsaved schedule change(s).")
+        else:
+            st.caption("Saved")
+        if st.button("Save Schedule Now", type="primary", disabled=not pending):
+            for target, new_call, new_notes in pending:
+                target["Call"] = new_call
+                target["Notes"] = new_notes
+            save_extra(extra)
+            if log_activity:
+                log_activity(f"Updated {year} call and vacation schedule")
             st.rerun()
     with tabs[1]:
-        selected = st.selectbox("Call", call_choices(store)[1:]); a, b, c = st.columns(3); start = a.date_input("Starting date", date(year, 1, 2), min_value=date(year, 1, 1), max_value=date(year, 12, 31)); weekday = b.selectbox("Day", WEEKDAYS, index=5); scope = c.selectbox("Apply to", SCOPES, index=1)
+        selected = st.selectbox("Call", call_choices(store)); a, b, c = st.columns(3); start = a.date_input("Starting date", date(year, 1, 2), min_value=date(year, 1, 1), max_value=date(year, 12, 31)); weekday = b.selectbox("Day", WEEKDAYS, index=5); scope = c.selectbox("Apply to", SCOPES, index=1)
         if st.button("Apply Call", type="primary"):
             for row in store["years"][str(year)]:
                 current = date.fromisoformat(row["Date"]); match = current == start if scope == "One date" else row["Day"] == weekday if scope == "All matching weekdays" else row["Day"] == weekday and current >= start

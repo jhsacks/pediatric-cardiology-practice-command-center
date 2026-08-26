@@ -1,5 +1,6 @@
 import pandas as pd
 import streamlit as st
+from call_schedule import ensure_store, render_editor, render_readonly
 
 from team_backend import TeamStore
 
@@ -233,6 +234,7 @@ with st.sidebar:
         [
             "Home", "Initiatives", "Decisions", "Roadmap",
             "Clinical Intelligence", "Practice Growth", "Physician RVUs",
+            "📅 Call & Vacation",
         ],
     )
     st.caption(f"Signed in: {user['name']}")
@@ -436,3 +438,6 @@ elif page == "Physician RVUs":
         else:
             st.dataframe(physician, hide_index=True, use_container_width=True)
 
+
+elif page == "📅 Call & Vacation":
+    render_editor(extra, save_extra, log_activity)

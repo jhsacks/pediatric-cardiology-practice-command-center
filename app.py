@@ -1,5 +1,6 @@
 import pandas as pd
 import streamlit as st
+from collaboration_governance import render_collaboration_center
 from call_schedule import ensure_store, render_editor, render_readonly
 
 from team_backend import TeamStore
@@ -235,6 +236,7 @@ with st.sidebar:
             "Home", "Initiatives", "Decisions", "Roadmap",
             "Clinical Intelligence", "Practice Growth", "Physician RVUs",
             "📅 Call & Vacation",
+            "🤝 Collaboration",
         ],
     )
     st.caption(f"Signed in: {user['name']}")
@@ -441,3 +443,6 @@ elif page == "Physician RVUs":
 
 elif page == "📅 Call & Vacation":
     render_readonly(ensure_store(extra))
+
+elif page == "🤝 Collaboration":
+    render_collaboration_center(extra, lambda updated: store.save(raw_data), current_user=user, admin_mode=False)

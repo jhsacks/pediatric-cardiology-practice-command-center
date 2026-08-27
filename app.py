@@ -1,5 +1,6 @@
 import pandas as pd
 import streamlit as st
+from strategic_roadmap import render_roadmap
 from collaboration_governance import render_collaboration_center
 from call_schedule import ensure_store, render_editor, render_readonly
 
@@ -237,6 +238,7 @@ with st.sidebar:
             "Clinical Intelligence", "Practice Growth", "Physician RVUs",
             "📅 Call & Vacation",
             "🤝 Collaboration",
+            "🗺️ Strategic Roadmap",
         ],
     )
     st.caption(f"Signed in: {user['name']}")
@@ -446,3 +448,6 @@ elif page == "📅 Call & Vacation":
 
 elif page == "🤝 Collaboration":
     render_collaboration_center(extra, lambda updated: store.save(raw_data), current_user=user, admin_mode=False)
+
+elif page == "🗺️ Strategic Roadmap":
+    render_roadmap(extra, lambda updated: store.save(raw_data), editable=True)

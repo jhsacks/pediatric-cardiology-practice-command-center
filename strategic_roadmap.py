@@ -63,7 +63,17 @@ def scenario_table(data,name):
     visits=float(data["assumptions"].get("Visits per full day",11) or 11); weeks=float(data["assumptions"].get("Effective operating weeks",45.2) or 45.2)
     frame["Annual Capacity"]=(frame["Provider Days/Week"]*visits*weeks).round(0)
     frame["Excess / (Shortage)"]=(frame["Annual Capacity"]-frame["Projected Demand"]).round(0)
-    frame["Utilization %"]=(frame["Projected Demand"]/frame["Annual Capacity"].replace(0,pd.NA)*100).round(1)
+    projected = pd.to_numeric(frame["Projected Demand"], errors="coerce").fillna(0.0).astype(float)
+    capacity = pd.to_numeric(frame["Annual Capacity"], errors="coerce").fillna(0.0).astype(float)
+    frame["Utilization %"] = 0.0
+    positive_capacity = capacity > 0
+    frame.loc[positive_capacity, "Utilization %"] = (
+        projected.loc[positive_capacity]
+        .div(capacity.loc[positive_capacity])
+        .mul(100.0)
+        .round(1)
+    )
+    frame.loc[(capacity == 0) & (projected > 0), "Utilization %"] = float("inf")
     return frame
 
 

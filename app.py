@@ -1,6 +1,5 @@
 import pandas as pd
 import streamlit as st
-from strategic_planning import render_strategic_planning_center
 from strategic_roadmap import render_roadmap
 from collaboration_governance import render_collaboration_center
 from call_schedule import ensure_store, render_editor, render_readonly
@@ -235,12 +234,11 @@ with st.sidebar:
     page = st.radio(
         "Navigate",
         [
-            "Home",   
+            "Home", "Initiatives", "Decisions", "Roadmap",
             "Clinical Intelligence", "Practice Growth", "Physician RVUs",
             "📅 Call & Vacation",
-            "📊 Strategic Planning",
             "🤝 Collaboration",
-            
+            "🗺️ Strategic Roadmap",
         ],
     )
     st.caption(f"Signed in: {user['name']}")
@@ -258,9 +256,9 @@ st.caption(
 
 if page == "Home":
     cols = st.columns(4)
-    cols[0].metric( len(initiatives))
-    cols[1].metric( len(visible_records(extra.get("decisions", []), "Private")))
-    cols[2].metric( len(visible_records(extra.get("roadmap", []), "Private")))
+    cols[0].metric("Initiatives", len(initiatives))
+    cols[1].metric("Decisions", len(visible_records(extra.get("decisions", []), "Private")))
+    cols[2].metric("Roadmap", len(visible_records(extra.get("roadmap", []), "Private")))
     cols[3].metric(
         "Intelligence",
         len(extra.get("clinical_intelligence", {}).get("items", [])),
@@ -453,6 +451,3 @@ elif page == "🤝 Collaboration":
 
 elif page == "🗺️ Strategic Roadmap":
     render_roadmap(extra, lambda updated: store.save(raw_data), editable=True)
-
-elif page == "📊 Strategic Planning":
-    render_strategic_planning_center(extra, lambda updated: store.save(raw_data))

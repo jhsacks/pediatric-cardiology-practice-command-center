@@ -1,6 +1,7 @@
 import pandas as pd
 import streamlit as st
-from strategic_roadmap import render_roadmap
+from strategic_planning import render_strategic_planning_center
+from shared_identity import active_directory, verify_pin
 from collaboration_governance import render_collaboration_center
 from call_schedule import ensure_store, render_editor, render_readonly
 
@@ -215,16 +216,34 @@ def practice_total_rows(rvu):
     return pd.concat([historical, calculated], ignore_index=True, sort=False)
 
 
-user = sign_in()
-roster = users()
 service_account = dict(st.secrets["google_service_account"])
 drive_settings = st.secrets["google_drive"]
-store = TeamStore(
-    service_account,
-    str(drive_settings["folder_id"]),
-    str(drive_settings["file_name"]),
-)
+store = TeamStore(service_account, str(drive_settings["folder_id"]), str(drive_settings["file_name"]))
 raw_data = store.load()
+extra = TeamStore.extras(raw_data)
+
+def shared_users():
+    directory = active_directory(extra)
+    return directory if any(row.get("pin_hash") for row in directory) else users()
+
+def shared_sign_in():
+    if st.session_state.get("practice_user"):
+        return st.session_state.practice_user
+    roster = shared_users()
+    st.title("Practice Command Center Sign In")
+    name = st.selectbox("Team member", [person["name"] for person in roster])
+    pin = st.text_input("PIN number (1-100)", type="password")
+    if st.button("Sign in", type="primary"):
+        match = next(person for person in roster if person["name"] == name)
+        valid = verify_pin(name, pin, match.get("pin_hash")) if match.get("pin_hash") else pin.strip() == str(match.get("pin", ""))
+        if valid:
+            st.session_state.practice_user = {key: match.get(key) for key in ["name", "email", "admin"]}
+            st.rerun()
+        st.error("The selected user and PIN did not match.")
+    st.stop()
+
+user = shared_sign_in()
+roster = shared_users()
 all_initiatives = TeamStore.initiatives(raw_data)
 initiatives = visible_records(all_initiatives, "Practice")
 extra = TeamStore.extras(raw_data)
@@ -234,11 +253,10 @@ with st.sidebar:
     page = st.radio(
         "Navigate",
         [
-            "Home", "Initiatives", "Decisions", "Roadmap",
-            "Clinical Intelligence", "Practice Growth", "Physician RVUs",
+            "Home", "Clinical Intelligence", "Physician RVUs",
             "📅 Call & Vacation",
             "🤝 Collaboration",
-            "🗺️ Strategic Roadmap",
+            "📊 Strategic Planning",
         ],
     )
     st.caption(f"Signed in: {user['name']}")
@@ -248,11 +266,6 @@ with st.sidebar:
         st.session_state.pop("practice_user", None)
         st.rerun()
 
-st.title("Pediatric Cardiology Practice Command Center")
-st.caption(
-    "Initiatives are collaborative. RVUs, growth, decisions, roadmap, "
-    "and intelligence are view-only."
-)
 
 if page == "Home":
     cols = st.columns(4)
@@ -272,56 +285,6 @@ if page == "Home":
         st.info("No initiatives are assigned to this user yet.")
     for item in mine:
         render_initiative(item, user, store, roster)
-
-elif page == "Initiatives":
-    show_archived = st.toggle("Show archived", False)
-    visible = [
-        item for item in initiatives
-        if show_archived or not item.get("archived")
-    ]
-    for item in visible:
-        render_initiative(item, user, store, roster)
-    if not visible:
-        st.info("No practice initiatives are available.")
-
-elif page == "Decisions":
-    frame = pd.DataFrame(visible_records(extra.get("decisions", []), "Private"))
-    if frame.empty:
-        st.info("No practice decisions.")
-    else:
-        st.dataframe(frame, hide_index=True, use_container_width=True)
-
-elif page == "Roadmap":
-    frame = pd.DataFrame(visible_records(extra.get("roadmap", []), "Private"))
-    if frame.empty:
-        st.info("No roadmap items.")
-    else:
-        st.dataframe(frame, hide_index=True, use_container_width=True)
-
-elif page == "Clinical Intelligence":
-    items = extra.get("clinical_intelligence", {}).get("items", [])
-    practice_items = [
-        item for item in items
-        if str(item.get("sharing", "Practice")) in ["Practice", "Shared"]
-    ]
-    for item in practice_items:
-        with st.expander(item.get("title", "Untitled")):
-            st.write(item.get("summary", ""))
-            if item.get("key_findings"):
-                st.write(f"**Key findings:** {item['key_findings']}")
-            if item.get("practice_relevance"):
-                st.write(f"**Practice relevance:** {item['practice_relevance']}")
-            if item.get("link"):
-                st.link_button("Open source", item["link"])
-    if not practice_items:
-        st.info("No practice-visible Clinical Intelligence items.")
-
-elif page == "Practice Growth":
-    frame = pd.DataFrame(visible_records(extra.get("growth", []), "Practice"))
-    if frame.empty:
-        st.info("No growth data.")
-    else:
-        st.dataframe(frame, hide_index=True, use_container_width=True)
 
 elif page == "Physician RVUs":
     rvu = extra.get("rvu_metrics", {})
@@ -449,5 +412,5 @@ elif page == "📅 Call & Vacation":
 elif page == "🤝 Collaboration":
     render_collaboration_center(extra, lambda updated: store.save(raw_data), current_user=user, admin_mode=False)
 
-elif page == "🗺️ Strategic Roadmap":
-    render_roadmap(extra, lambda updated: store.save(raw_data), editable=True)
+elif page == "📊 Strategic Planning":
+    render_strategic_planning_center(extra, lambda updated: store.save(raw_data))

@@ -33,7 +33,12 @@ def render_list(g,user,save,bucket,label):
  for x in [i for i in g[bucket] if allowed(i,user) and i.get("status")!="Archived"]:
   with st.expander(f"{x['title']} | {x.get('owner')} | {x.get('sharing')}"):
    with st.form("edit_"+x["id"]):
-    owner=st.selectbox("Owner",names(g),index=names(g).index(x.get("owner")) if x.get("owner") in names(g) else 0,key=x["id"]+"o"); sharing=st.selectbox("Share with",SHARING,index=SHARING.index(x.get("sharing","Everyone")),key=x["id"]+"s"); shared=st.multiselect("Selected people",[n for n in names(g) if n!=owner],default=x.get("shared_with",[]),key=x["id"]+"p") if sharing=="Selected people" else []; status=st.selectbox("Status",["Active","Completed","Archived"],index=["Active","Completed","Archived"].index(x.get("status","Active"))); notes=st.text_area("Notes",x.get("notes",""))
+    owner=st.selectbox("Owner",names(g),index=names(g).index(x.get("owner")) if x.get("owner") in names(g) else 0,key=x["id"]+"o"); sharing_value=x.get("sharing","Everyone")
+    if sharing_value not in SHARING: sharing_value="Everyone"
+    sharing=st.selectbox("Share with",SHARING,index=SHARING.index(sharing_value),key=x["id"]+"s"); shared=st.multiselect("Selected people",[n for n in names(g) if n!=owner],default=x.get("shared_with",[]),key=x["id"]+"p") if sharing=="Selected people" else []; status_options=["Active","Completed","Archived"]
+    status_value=x.get("status","Active")
+    if status_value not in status_options: status_value="Active"
+    status=st.selectbox("Status",status_options,index=status_options.index(status_value)); notes=st.text_area("Notes",x.get("notes",""))
     if st.form_submit_button("Save"): x.update(owner=owner,sharing=sharing,shared_with=shared,status=status,notes=notes,updated_by=user,updated_at=now()); save(); st.rerun()
 def render_collaboration_center(extra,save_extra,current_user=None,admin_mode=False):
  g=ensure(extra); save=lambda:save_extra(extra); st.header("Collaboration")

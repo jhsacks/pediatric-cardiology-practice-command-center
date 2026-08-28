@@ -21,24 +21,20 @@ ARTICLE_STATES = ["Unread", "Reviewed", "Not Relevant", "Hidden For Me"]
 STATUSES = ["Active", "Completed", "Archived"]
 
 
-def now():
-    return datetime.now(timezone.utc).isoformat()
+def now(): return datetime.now(timezone.utc).isoformat()
 
 
 def ensure_collaboration(extra):
     data = extra.setdefault("collaboration", {})
-    existing = {str(row.get("name", "")): row for row in data.setdefault("users", [])}
+    users = data.setdefault("users", [])
+    existing = {str(row.get("name", "")): row for row in users}
     for default in DEFAULT_USERS:
         if default["name"] not in existing:
-            data["users"].append(deepcopy(default))
+            users.append(deepcopy(default))
         else:
-            for key, value in default.items():
-                existing[default["name"]].setdefault(key, value)
-    data.setdefault("initiatives", [])
-    data.setdefault("decisions", [])
-    data.setdefault("practice_growth", [])
-    data.setdefault("article_user_state", {})
-    data.setdefault("pin_hashes", {})
+            for key, value in default.items(): existing[default["name"]].setdefault(key, value)
+    for key, value in {"initiatives":[], "decisions":[], "practice_growth":[], "article_user_state":{}, "pin_hashes":{}, "pin_references":{}}.items():
+        data.setdefault(key, deepcopy(value))
     return data
 
 
@@ -47,17 +43,12 @@ def active_names(data):
 
 
 def normalize_item(item):
-    sharing = item.get("sharing", item.get("visibility", "Everyone"))
-    mapping = {"Shared": "Everyone", "Practice": "Everyone", "Private": "Only me"}
-    item["sharing"] = mapping.get(str(sharing), str(sharing))
-    if item["sharing"] not in SHARING:
-        item["sharing"] = "Everyone"
+    mapping = {"Shared":"Everyone", "Practice":"Everyone", "Private":"Only me"}
+    sharing = mapping.get(str(item.get("sharing", item.get("visibility", "Everyone"))), str(item.get("sharing", "Everyone")))
+    item["sharing"] = sharing if sharing in SHARING else "Everyone"
     status = str(item.get("status", "Active"))
-    if status in ["Complete", "Finalized"]:
-        status = "Completed"
-    if status not in STATUSES:
-        status = "Active"
-    item["status"] = status
+    status = "Completed" if status in ["Complete", "Finalized"] else status
+    item["status"] = status if status in STATUSES else "Active"
     item.setdefault("shared_with", [])
     item.setdefault("creator", item.get("created_by", item.get("owner", "")))
     item.setdefault("owner", item.get("creator", ""))
@@ -68,12 +59,7 @@ def normalize_item(item):
 
 def can_access(item, user):
     normalize_item(item)
-    return (
-        item.get("creator") == user
-        or item.get("owner") == user
-        or item.get("sharing") == "Everyone"
-        or (item.get("sharing") == "Selected people" and user in item.get("shared_with", []))
-    )
+    return item.get("creator") == user or item.get("owner") == user or item.get("sharing") == "Everyone" or (item.get("sharing") == "Selected people" and user in item.get("shared_with", []))
 
 
 def sharing_controls(data, key, owner_default, sharing_default="Everyone", selected_default=None):
@@ -93,22 +79,14 @@ def render_collection(data, user, save, bucket, singular):
             title = st.text_input("Title")
             owner, sharing, selected = sharing_controls(data, f"create_{bucket}", user)
             notes = st.text_area("Notes")
-            submitted = st.form_submit_button("Create")
-            if submitted and title.strip():
-                data[bucket].append({
-                    "id": f"{bucket[:3].upper()}-{uuid4().hex[:8]}",
-                    "title": title.strip(), "owner": owner, "creator": user,
-                    "sharing": sharing, "shared_with": selected,
-                    "status": "Active", "notes": notes.strip(),
-                    "created_at": now(), "updated_at": now(), "updated_by": user,
-                })
+            if st.form_submit_button("Create") and title.strip():
+                data[bucket].append({"id":f"{bucket[:3].upper()}-{uuid4().hex[:8]}", "title":title.strip(), "owner":owner, "creator":user, "sharing":sharing, "shared_with":selected, "status":"Active", "notes":notes.strip(), "created_at":now(), "updated_at":now(), "updated_by":user})
                 save()
-                st.success(f"{singular} created.")
+                st.success(f"{singular} created. The form is ready for another entry.")
     show_archived = st.toggle(f"Show archived {bucket.replace('_', ' ')}", False, key=f"show_{bucket}")
     for item in data[bucket]:
         normalize_item(item)
-        if not can_access(item, user) or (item["status"] == "Archived" and not show_archived):
-            continue
+        if not can_access(item, user) or (item["status"] == "Archived" and not show_archived): continue
         with st.expander(f"{item.get('title', 'Untitled')} | {item.get('owner')} | {item.get('sharing')}"):
             with st.form(f"edit_{item['id']}"):
                 owner, sharing, selected = sharing_controls(data, item["id"], item.get("owner"), item.get("sharing"), item.get("shared_with"))
@@ -116,58 +94,90 @@ def render_collection(data, user, save, bucket, singular):
                 notes = st.text_area("Notes", item.get("notes", ""))
                 if st.form_submit_button("Save"):
                     item.update(owner=owner, sharing=sharing, shared_with=selected, status=status, notes=notes, updated_at=now(), updated_by=user)
-                    save()
-                    st.rerun()
+                    save(); st.rerun()
+
+
+def article_team_status(data, article_id):
+    rows = []
+    for name in active_names(data):
+        rows.append({"User":name, "Status":data["article_user_state"].get(name, {}).get(article_id, "Unread")})
+    return rows
+
+
+def render_article_review(extra, data, user, save):
+    personal = data["article_user_state"].setdefault(user, {})
+    filters = st.multiselect("Show", ARTICLE_STATES, default=["Unread", "Reviewed", "Not Relevant"], key="article_filters_final")
+    articles = extra.get("clinical_intelligence", {}).get("items", [])
+    visible = 0
+    for article in articles:
+        article_id = str(article.get("id") or article.get("link") or article.get("title"))
+        current = personal.get(article_id, "Unread")
+        if current not in ARTICLE_STATES: current = "Unread"
+        if current not in filters: continue
+        visible += 1
+        with st.expander(f"{article.get('title', 'Untitled')} | {current}"):
+            if article.get("source"): st.caption(f"Source: {article['source']}")
+            if article.get("date_added"): st.caption(f"Added: {article['date_added']}")
+            if article.get("summary"): st.markdown(f"**Summary**\n\n{article['summary']}")
+            if article.get("key_findings"): st.markdown(f"**Key Findings**\n\n{article['key_findings']}")
+            if article.get("practice_relevance"): st.markdown(f"**Practice Relevance**\n\n{article['practice_relevance']}")
+            choice = st.radio("My status", ARTICLE_STATES, index=ARTICLE_STATES.index(current), horizontal=True, key=f"article_{user}_{article_id}")
+            if st.button("Save My Status", key=f"save_article_{user}_{article_id}"):
+                personal[article_id] = choice; save(); st.rerun()
+            if article.get("link"): st.link_button("Open source", article["link"])
+            with st.expander("Team review status"):
+                st.dataframe(pd.DataFrame(article_team_status(data, article_id)), hide_index=True, use_container_width=True)
+    if visible == 0: st.info("No articles match the selected personal-status filters.")
+
+
+def render_collaboration_home(extra, current_user=None):
+    data = ensure_collaboration(extra)
+    user = (current_user or {}).get("name") if current_user else None
+    if user not in active_names(data): user = st.selectbox("Dashboard for", active_names(data), key="home_dashboard_user")
+    accessible_initiatives = [x for x in data["initiatives"] if can_access(x, user) and normalize_item(x).get("status") == "Active"]
+    accessible_decisions = [x for x in data["decisions"] if can_access(x, user) and normalize_item(x).get("status") == "Active"]
+    accessible_growth = [x for x in data["practice_growth"] if can_access(x, user) and normalize_item(x).get("status") == "Active"]
+    articles = extra.get("clinical_intelligence", {}).get("items", [])
+    states = data["article_user_state"].setdefault(user, {})
+    unread = sum(states.get(str(a.get("id") or a.get("link") or a.get("title")), "Unread") == "Unread" for a in articles)
+    planning = extra.get("strategic_planning_12", {})
+    milestones = planning.get("milestones", [])
+    risks = planning.get("risks", [])
+    open_milestones = sum(str(x.get("Status", x.get("status", ""))).lower() not in ["complete", "completed"] for x in milestones)
+    high_risks = sum(str(x.get("Likelihood", x.get("likelihood", ""))).lower() == "high" and str(x.get("Impact", x.get("impact", ""))).lower() == "high" for x in risks)
+    cols = st.columns(6)
+    cols[0].metric("Active Initiatives", len(accessible_initiatives)); cols[1].metric("Open Decisions", len(accessible_decisions)); cols[2].metric("Growth Items", len(accessible_growth)); cols[3].metric("Unread Articles", unread); cols[4].metric("Roadmap Milestones", open_milestones); cols[5].metric("High Risks", high_risks)
+    st.subheader("My Active Work")
+    rows = ([{"Type":"Initiative", "Title":x.get("title"), "Owner":x.get("owner")} for x in accessible_initiatives] + [{"Type":"Decision", "Title":x.get("title"), "Owner":x.get("owner")} for x in accessible_decisions] + [{"Type":"Growth", "Title":x.get("title"), "Owner":x.get("owner")} for x in accessible_growth])
+    if rows: st.dataframe(pd.DataFrame(rows), hide_index=True, use_container_width=True)
+    else: st.info("No active accessible work items.")
 
 
 def render_collaboration_center(extra, save_extra, current_user=None, admin_mode=False):
-    data = ensure_collaboration(extra)
-    save = lambda: save_extra(extra)
+    data = ensure_collaboration(extra); save = lambda: save_extra(extra)
     user = (current_user or {}).get("name") if current_user else None
-    if user not in active_names(data):
-        user = st.selectbox("Working as", active_names(data), key="collaboration_working_as")
+    if user not in active_names(data): user = st.selectbox("Working as", active_names(data), key="collaboration_working_as")
     tabs = st.tabs(["Initiatives", "Decisions", "Article Review", "Practice Growth"] + (["Users & PINs"] if admin_mode else []))
-    with tabs[0]:
-        render_collection(data, user, save, "initiatives", "Initiative")
-    with tabs[1]:
-        render_collection(data, user, save, "decisions", "Decision")
-    with tabs[2]:
-        states = data["article_user_state"].setdefault(user, {})
-        for article in extra.get("clinical_intelligence", {}).get("items", []):
-            article_id = str(article.get("id") or article.get("link") or article.get("title"))
-            current = states.get(article_id, "Unread")
-            if current not in ARTICLE_STATES:
-                current = "Unread"
-            with st.expander(f"{article.get('title', 'Untitled')} | {current}"):
-                choice = st.radio("My status", ARTICLE_STATES, index=ARTICLE_STATES.index(current), horizontal=True, key=f"article_{user}_{article_id}")
-                if st.button("Save My Status", key=f"save_article_{user}_{article_id}"):
-                    states[article_id] = choice
-                    save()
-                    st.rerun()
-                if article.get("link"):
-                    st.link_button("Open source", article["link"])
-    with tabs[3]:
-        render_collection(data, user, save, "practice_growth", "Growth Opportunity")
+    with tabs[0]: render_collection(data, user, save, "initiatives", "Initiative")
+    with tabs[1]: render_collection(data, user, save, "decisions", "Decision")
+    with tabs[2]: render_article_review(extra, data, user, save)
+    with tabs[3]: render_collection(data, user, save, "practice_growth", "Growth Opportunity")
     if admin_mode:
         with tabs[4]:
             users = pd.DataFrame(data["users"])
-            edited = st.data_editor(users, hide_index=True, use_container_width=True, num_rows="dynamic", key="user_directory_final")
+            edited = st.data_editor(users, hide_index=True, use_container_width=True, num_rows="dynamic", key="user_directory_15")
             if st.button("Save User Directory"):
-                data["users"] = edited.where(pd.notna(edited), "").to_dict("records")
-                save()
-                st.rerun()
-            st.subheader("Assign or reset PIN")
-            with st.form("assign_pin", clear_on_submit=True):
-                pin_user = st.selectbox("User", active_names(data))
-                pin = st.text_input("New PIN (1-100)", type="password")
+                data["users"] = edited.where(pd.notna(edited), "").to_dict("records"); save(); st.rerun()
+            st.subheader("Assigned PIN reference")
+            pin_rows = [{"User":name, "PIN":data["pin_references"].get(name, "Not recorded") } for name in active_names(data)]
+            st.dataframe(pd.DataFrame(pin_rows), hide_index=True, use_container_width=True)
+            with st.form("assign_pin_15", clear_on_submit=True):
+                pin_user = st.selectbox("User", active_names(data)); pin = st.text_input("New PIN (1-100)", type="password")
                 if st.form_submit_button("Save PIN"):
-                    try:
-                        number = int(pin)
-                    except (TypeError, ValueError):
-                        number = 0
+                    try: number = int(pin)
+                    except (TypeError, ValueError): number = 0
                     if 1 <= number <= 100:
                         data["pin_hashes"][pin_user] = hash_pin(pin_user, number)
-                        save()
-                        st.success("PIN saved.")
-                    else:
-                        st.error("PIN must be from 1 through 100.")
+                        data["pin_references"][pin_user] = str(number)
+                        save(); st.success("PIN saved. The reference table now shows the assigned PIN.")
+                    else: st.error("PIN must be from 1 through 100.")

@@ -273,8 +273,11 @@ with st.sidebar:
 
 if page == "Home":
     cols = st.columns(4)
-    cols[0].metric( len(initiatives))
-    cols[1].metric( len(visible_records(extra.get("decisions", []), "Private")))
+    cols[0].metric("Initiatives", len(initiatives))
+    cols[1].metric(
+        "Decisions",
+        len(visible_records(extra.get("decisions", []), "Private"))
+    )
     cols[2].metric("Roadmap", len(visible_records(extra.get("roadmap", []), "Private")))
     cols[3].metric(
         "Intelligence",

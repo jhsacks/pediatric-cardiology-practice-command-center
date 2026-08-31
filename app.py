@@ -1,5 +1,6 @@
 import pandas as pd
 import streamlit as st
+from practice_home_dashboard import render_practice_home
 from strategic_planning import render_strategic_planning_center
 from shared_identity import active_directory, verify_pin
 from collaboration_governance import render_collaboration_center, render_clinical_intelligence, render_initiatives_page, render_decisions_page, render_growth_page, render_pin_admin
@@ -271,27 +272,12 @@ with st.sidebar:
         st.rerun()
 
 
+target_page = st.session_state.pop("practice_home_target_page", None)
+if target_page:
+    page = target_page
+
 if page == "Home":
-    cols = st.columns(4)
-    cols[0].metric("Initiatives", len(initiatives))
-    cols[1].metric(
-        "Decisions",
-        len(visible_records(extra.get("decisions", []), "Private"))
-    )
-    cols[2].metric("Roadmap", len(visible_records(extra.get("roadmap", []), "Private")))
-    cols[3].metric(
-        "Intelligence",
-        len(extra.get("clinical_intelligence", {}).get("items", [])),
-    )
-    st.subheader("My Initiatives")
-    mine = [
-        item for item in initiatives
-        if user["admin"] or user["email"] in owner_emails(item)
-    ]
-    if not mine:
-        st.info("No initiatives are assigned to this user yet.")
-    for item in mine:
-        render_initiative(item, user, store, roster)
+    render_practice_home(extra, user)
 
 elif page == "Physician RVUs":
     rvu = extra.get("rvu_metrics", {})

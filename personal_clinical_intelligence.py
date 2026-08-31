@@ -100,7 +100,7 @@ def render_personal_clinical_intelligence(extra, save_extra, current_user=None):
         "Show articles with my status",
         ARTICLE_STATES,
         default=["Unread"],
-        key=f"personal_ci_filters_{user}",
+        key=f"personal_ci_filters_20260831_{user}",
     )
 
     visible = 0

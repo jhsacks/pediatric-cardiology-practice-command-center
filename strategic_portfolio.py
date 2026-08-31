@@ -6,7 +6,7 @@ def _share(x): return {"Shared":"Everyone","Practice":"Everyone","Private":"Only
 def _view(x,u): return _share(x)=="Everyone" or x.get("owner")==u or x.get("creator",x.get("created_by"))==u or (_share(x)=="Selected people" and u in x.get("shared_with",[]))
 def _user(extra,current=None):
  names=[x.get("name") for x in extra.get("collaboration",{}).get("users",[]) if x.get("active",True) and x.get("name")]
- return current if current in names else (st.selectbox("Portfolio view for",names,key="portfolio_user") if names else "")
+ return current if current in names else (st.selectbox("Portfolio view for",names,key="portfolio_user_main") if names else "")
 def render_strategic_portfolio(extra,current_user=None):
  u=_user(extra,(current_user or {}).get("name") if current_user else None); rows=[]; c=extra.get("collaboration",{})
  for kind,bucket in [("Initiative","initiatives"),("Decision","decisions"),("Growth","practice_growth")]:

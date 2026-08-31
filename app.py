@@ -409,7 +409,8 @@ elif page == "📚 Clinical Intelligence":
         extra,
         lambda updated: store.save(raw_data),
         current_user=user
-    )elif page == "🚀 Initiatives":
+    )
+elif page == "🚀 Initiatives":
     render_initiatives_page(extra, lambda updated: store.save(raw_data), current_user=user)
 elif page == "⚖️ Decisions":
     render_decisions_page(extra, lambda updated: store.save(raw_data), current_user=user)

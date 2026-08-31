@@ -2,7 +2,7 @@ import pandas as pd
 import streamlit as st
 from strategic_planning import render_strategic_planning_center
 from shared_identity import active_directory, verify_pin
-from collaboration_governance import render_collaboration_center
+from collaboration_governance import render_collaboration_center, render_clinical_intelligence, render_initiatives_page, render_decisions_page, render_growth_page, render_pin_admin
 from call_schedule import ensure_store, render_editor, render_readonly
 
 from team_backend import TeamStore
@@ -253,9 +253,13 @@ with st.sidebar:
     page = st.radio(
         "Navigate",
         [
-            "Home", "Clinical Intelligence", "Physician RVUs",
+            "Home",  "Physician RVUs",
             "📅 Call & Vacation",
-            "🤝 Collaboration",
+            
+            "📚 Clinical Intelligence",
+            "🚀 Initiatives",
+            "⚖️ Decisions",
+            "🌱 Practice Growth",
             "📊 Strategic Planning",
         ],
     )
@@ -269,8 +273,8 @@ with st.sidebar:
 
 if page == "Home":
     cols = st.columns(4)
-    cols[0].metric("Initiatives", len(initiatives))
-    cols[1].metric("Decisions", len(visible_records(extra.get("decisions", []), "Private")))
+    cols[0].metric( len(initiatives))
+    cols[1].metric( len(visible_records(extra.get("decisions", []), "Private")))
     cols[2].metric("Roadmap", len(visible_records(extra.get("roadmap", []), "Private")))
     cols[3].metric(
         "Intelligence",
@@ -409,8 +413,14 @@ elif page == "Physician RVUs":
 elif page == "📅 Call & Vacation":
     render_readonly(ensure_store(extra))
 
-elif page == "🤝 Collaboration":
-    render_collaboration_center(extra, lambda updated: store.save(raw_data), current_user=user, admin_mode=False)
 
+elif page == "📚 Clinical Intelligence":
+    render_clinical_intelligence(extra, lambda updated: store.save(raw_data), current_user=user)
+elif page == "🚀 Initiatives":
+    render_initiatives_page(extra, lambda updated: store.save(raw_data), current_user=user)
+elif page == "⚖️ Decisions":
+    render_decisions_page(extra, lambda updated: store.save(raw_data), current_user=user)
+elif page == "🌱 Practice Growth":
+    render_growth_page(extra, lambda updated: store.save(raw_data), current_user=user)
 elif page == "📊 Strategic Planning":
     render_strategic_planning_center(extra, lambda updated: store.save(raw_data))

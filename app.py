@@ -1,5 +1,6 @@
 import pandas as pd
 import streamlit as st
+from collaborative_work import render_initiatives as render_work_initiatives, render_decisions as render_work_decisions, render_growth as render_work_growth, render_user_admin
 from personal_clinical_intelligence import render_personal_clinical_intelligence
 from practice_home_dashboard import render_practice_home
 from strategic_planning import render_strategic_planning_center
@@ -411,10 +412,10 @@ elif page == "📚 Clinical Intelligence":
         current_user=user
     )
 elif page == "🚀 Initiatives":
-    render_initiatives_page(extra, lambda updated: store.save(raw_data), current_user=user)
+    render_work_initiatives(extra, lambda updated: store.save(raw_data), current_user=user, allow_view_as=False)
 elif page == "⚖️ Decisions":
-    render_decisions_page(extra, lambda updated: store.save(raw_data), current_user=user)
+    render_work_decisions(extra, lambda updated: store.save(raw_data), current_user=user, allow_view_as=False)
 elif page == "🌱 Practice Growth":
-    render_growth_page(extra, lambda updated: store.save(raw_data), current_user=user)
+    render_work_growth(extra, lambda updated: store.save(raw_data), current_user=user, allow_view_as=False)
 elif page == "📊 Strategic Planning":
-    render_strategic_planning_center(extra, lambda updated: store.save(raw_data))
+    render_strategic_planning_center(extra, lambda updated: store.save(raw_data), current_user=user)

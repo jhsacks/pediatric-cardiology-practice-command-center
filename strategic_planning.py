@@ -2,6 +2,7 @@ from copy import deepcopy
 
 import pandas as pd
 import streamlit as st
+from personal_scenarios import render_personal_scenarios
 
 from strategic_portfolio import render_growth_planner, render_strategic_portfolio
 
@@ -150,10 +151,10 @@ def impact_preview(saved, preview):
     st.info(f"Preview impact: {total_days_change:+.2f} provider days/week and {total_capacity_change:+,.0f} annual patient slots.")
 
 
-def render_strategic_planning_center(extra, save_extra):
+def render_strategic_planning_center(extra, save_extra, current_user=None):
     data = ensure_planning(extra)
     save = lambda: save_extra(extra)
-    tabs = st.tabs(["Portfolio", "Scenarios", "Assumptions & Demand", "Roadmap", "Risks", "Notes"])
+    tabs = st.tabs(["Portfolio", "Shared Scenarios", "My Scenarios", "Assumptions & Demand", "Roadmap", "Risks", "Notes"])
 
     with tabs[0]:
         render_strategic_portfolio(extra)
@@ -188,6 +189,9 @@ def render_strategic_planning_center(extra, save_extra):
             st.rerun()
 
     with tabs[2]:
+        render_personal_scenarios(extra, save_extra, current_user, scenario_result)
+
+    with tabs[3]:
         st.markdown("#### Planning Assumptions")
         assumptions = pd.DataFrame([{"Assumption": key, "Value": value} for key, value in data["assumptions"].items()])
         edited_assumptions = st.data_editor(assumptions, hide_index=True, use_container_width=True, key="planning_assumptions_19")
@@ -205,21 +209,21 @@ def render_strategic_planning_center(extra, save_extra):
             save()
             st.rerun()
 
-    with tabs[3]:
+    with tabs[4]:
         edited = st.data_editor(pd.DataFrame(data["milestones"]), hide_index=True, use_container_width=True, num_rows="dynamic", key="planning_milestones_19")
         if st.button("Save Roadmap"):
             data["milestones"] = edited.to_dict("records")
             save()
             st.rerun()
 
-    with tabs[4]:
+    with tabs[5]:
         edited = st.data_editor(pd.DataFrame(data["risks"]), hide_index=True, use_container_width=True, num_rows="dynamic", key="planning_risks_19")
         if st.button("Save Risks"):
             data["risks"] = edited.to_dict("records")
             save()
             st.rerun()
 
-    with tabs[5]:
+    with tabs[6]:
         notes = st.text_area("Leadership notes", data["notes"], height=300)
         if st.button("Save Notes"):
             data["notes"] = notes

@@ -1,0 +1,22 @@
+name: Install Identity Permissions 23
+on:
+  workflow_dispatch:
+permissions:
+  contents: write
+jobs:
+  install:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - run: python install_23.py
+      - run: python patch_planning_23.py
+      - run: python -m py_compile app.py collaborative_work.py access_control.py personal_scenarios.py strategic_planning.py
+      - run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add app.py strategic_planning.py collaborative_work.py access_control.py personal_scenarios.py
+          git diff --cached --quiet || git commit -m "Install identity permissions editing and personal scenarios"
+          git push

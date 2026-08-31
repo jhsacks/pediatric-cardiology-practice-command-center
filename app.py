@@ -1,5 +1,6 @@
 import pandas as pd
 import streamlit as st
+from personal_clinical_intelligence import render_personal_clinical_intelligence
 from practice_home_dashboard import render_practice_home
 from strategic_planning import render_strategic_planning_center
 from shared_identity import active_directory, verify_pin
@@ -404,8 +405,11 @@ elif page == "📅 Call & Vacation":
 
 
 elif page == "📚 Clinical Intelligence":
-    render_clinical_intelligence(extra, lambda updated: store.save(raw_data), current_user=user)
-elif page == "🚀 Initiatives":
+    render_personal_clinical_intelligence(
+        extra,
+        lambda updated: store.save(raw_data),
+        current_user=user
+    )elif page == "🚀 Initiatives":
     render_initiatives_page(extra, lambda updated: store.save(raw_data), current_user=user)
 elif page == "⚖️ Decisions":
     render_decisions_page(extra, lambda updated: store.save(raw_data), current_user=user)

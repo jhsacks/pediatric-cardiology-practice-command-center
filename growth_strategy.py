@@ -5,6 +5,7 @@ import re
 
 import pandas as pd
 import streamlit as st
+from strategy_agent_29 import enhanced_conversational_response
 from roadmap_editor import render_roadmap_editor
 
 HORIZONS = ["1 Year", "3 Years", "5 Years", "10-Year Vision"]
@@ -119,10 +120,15 @@ def agent_tab(extra,data,save_extra,user):
         if cols[i%2].button(text,key=f"starter_{i}",use_container_width=True): st.session_state["growth_agent_prompt"]=text
     prompt=st.text_area("Talk to the Strategy Agent",value=st.session_state.get("growth_agent_prompt",""),height=120,placeholder="For example: We do not go to Griffin often. How could we expand access without immediately adding another full clinic day?")
     if st.button("Analyze",type="primary") and prompt.strip():
-        response=conversational_response(prompt,extra); history.append({"prompt":prompt,"response":response,"time":now()}); save_extra(extra); st.session_state["growth_agent_last"]=response
+        response=enhanced_conversational_response(prompt,extra); history.append({"prompt":prompt,"response":response,"time":now()}); save_extra(extra); st.session_state["growth_agent_last"]=response
     response=st.session_state.get("growth_agent_last") or (history[-1]["response"] if history else None)
     if response:
-        st.markdown(response["answer"]); st.markdown("#### Questions worth answering")
+        st.markdown(response["answer"])
+        if response.get("context"):
+            st.markdown("#### What I considered")
+            for line in response["context"]:
+                st.write("• " + line)
+        st.markdown("#### Questions worth answering")
         for q in response["questions"]: st.write("• "+q)
         st.markdown("#### Proposed roadmap structure")
         for step in response["roadmap"]: st.write("• "+step)

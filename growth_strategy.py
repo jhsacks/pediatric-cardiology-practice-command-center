@@ -5,6 +5,7 @@ import re
 
 import pandas as pd
 import streamlit as st
+from roadmap_editor import render_roadmap_editor
 
 HORIZONS = ["1 Year", "3 Years", "5 Years", "10-Year Vision"]
 DOMAINS = ["Vision", "Physician Workforce", "Locations & Access", "Telemedicine", "Clinical Services", "Staffing", "Equipment & Infrastructure", "Hospital Integration", "Quality", "Finance"]
@@ -172,7 +173,7 @@ def render_growth_strategy(extra,save_extra,current_user=None,executive=False):
     with tabs[5]: grid_tab(data,"readiness","Clinical Service Readiness",[],save_extra,extra,can_edit(data,user))
     with tabs[6]: st.info("Staffing needs are captured as roadmap dependencies and linked initiatives in this first release.")
     with tabs[7]: st.info("Equipment, space, technology, and hospital infrastructure needs are captured as roadmap dependencies in this first release.")
-    with tabs[8]: roadmap_tab(data,extra,save_extra,user)
+    with tabs[8]: render_roadmap_editor(data, extra, save_extra, user, executive=executive)
     with tabs[9]:
         st.subheader("Suggestions"); suggestion=st.text_area("Suggest a roadmap item, risk, service, location, or assumption change")
         if st.button("Submit suggestion") and suggestion.strip(): data["suggestions"].append({"id":"SUG-"+uuid4().hex[:8],"user":user,"text":suggestion.strip(),"status":"Suggestion","time":now()});save_extra(extra);st.rerun()

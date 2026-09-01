@@ -1,0 +1,24 @@
+name: Install Collaboration Scenario Fix 24
+on:
+  workflow_dispatch:
+permissions:
+  contents: write
+jobs:
+  install:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - run: python patch_24.py
+      - run: python -m py_compile app.py collaborative_work.py personal_scenarios.py strategic_planning.py
+      - run: |
+          grep -q 'Selected people' collaborative_work.py
+          grep -q 'Future Demand, Capacity, and Utilization' personal_scenarios.py
+      - run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add app.py collaborative_work.py personal_scenarios.py
+          git diff --cached --quiet || git commit -m "Fix sharing picker identity lock and personal scenario analysis"
+          git push

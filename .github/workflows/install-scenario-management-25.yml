@@ -1,0 +1,26 @@
+name: Install Scenario Management 25
+on:
+  workflow_dispatch:
+permissions:
+  contents: write
+jobs:
+  install:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Validate scenario management module
+        run: |
+          python -m py_compile personal_scenarios.py strategic_planning.py
+          grep -q 'Save Changes' personal_scenarios.py
+          grep -q 'Duplicate' personal_scenarios.py
+          grep -q 'Yes, delete' personal_scenarios.py
+      - name: Commit
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add personal_scenarios.py
+          git diff --cached --quiet || git commit -m "Add personal scenario management"
+          git push

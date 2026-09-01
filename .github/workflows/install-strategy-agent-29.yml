@@ -1,0 +1,24 @@
+name: Install Strategy Agent 29
+on:
+  workflow_dispatch:
+permissions:
+  contents: write
+jobs:
+  install:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - run: python install_strategy_agent_29.py
+      - run: |
+          python -m py_compile growth_strategy.py strategy_agent_29.py
+          grep -q 'enhanced_conversational_response' growth_strategy.py
+          grep -q 'What I considered' growth_strategy.py
+      - run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add growth_strategy.py strategy_agent_29.py
+          git diff --cached --quiet || git commit -m "Install context-aware Growth Strategy Agent"
+          git push

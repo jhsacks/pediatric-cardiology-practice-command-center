@@ -107,12 +107,49 @@ def sync_tab(data,extra,save_extra,user):
                 if b.button("Dismiss",key=p["id"]+"_dismiss"):p["status"]="Dismissed";save_extra(extra);st.rerun()
 
 def recommendation_dates(planning,settings):
-    scenarios=planning.get("scenarios",{}); demand_rows=planning.get("demand",[]); assumptions=planning.get("assumptions",{}); visits=float(assumptions.get("Visits per full clinic day",11) or 11); weeks=float(assumptions.get("Effective operating weeks",45.2) or 45.2); output=[]
-    for scenario,alloc in scenarios.items():
-        capacity=sum(float(days or 0)*visits*weeks for days in alloc.values()); demand=0
-        for row in demand_rows:
-            override=row.get("FY27 Override"); base=float(row.get("FY26 Visits",0) or 0); growth=float(row.get("Growth %",0) or 0); demand+=float(override) if override not in (None,"","None") else base*(1+growth/100)
-        utilization=(demand/capacity*100) if capacity else 999; output.append({"Scenario":scenario,"Projected Demand":round(demand),"Capacity":round(capacity),"Utilization %":round(utilization,1),"Recruitment Signal":"Begin planning" if utilization>=float(settings["utilization_trigger_pct"]) else "Monitor"})
+    def safe_number(value, default=0.0):
+        try:
+            number = float(value)
+            return number if number == number else default
+        except (TypeError, ValueError, OverflowError):
+            return default
+
+    scenarios = planning.get("scenarios", {})
+    demand_rows = planning.get("demand", [])
+    assumptions = planning.get("assumptions", {})
+    visits = safe_number(assumptions.get("Visits per full clinic day", 11), 11.0)
+    weeks = safe_number(assumptions.get("Effective operating weeks", 45.2), 45.2)
+    trigger = safe_number(settings.get("utilization_trigger_pct", 85.0), 85.0)
+    output = []
+
+    for scenario, allocation in scenarios.items():
+        capacity = 0.0
+        values = allocation.values() if isinstance(allocation, dict) else []
+        for days in values:
+            capacity += safe_number(days, 0.0) * visits * weeks
+
+        demand = 0.0
+        for row in demand_rows if isinstance(demand_rows, list) else []:
+            if not isinstance(row, dict):
+                continue
+            override = row.get("FY27 Override")
+            base = safe_number(row.get("FY26 Visits", 0), 0.0)
+            growth = safe_number(row.get("Growth %", 0), 0.0)
+            if override not in (None, "", "None"):
+                demand += safe_number(override, base * (1 + growth / 100.0))
+            else:
+                demand += base * (1 + growth / 100.0)
+
+        capacity = safe_number(capacity, 0.0)
+        demand = safe_number(demand, 0.0)
+        utilization = safe_number((demand / capacity * 100.0) if capacity > 0 else 999.0, 999.0)
+        output.append({
+            "Scenario": str(scenario),
+            "Projected Demand": round(demand),
+            "Capacity": round(capacity),
+            "Utilization %": round(utilization, 1),
+            "Recruitment Signal": "Begin planning" if utilization >= trigger else "Monitor",
+        })
     return output
 
 def recruitment_tab(data,extra,save_extra,user):

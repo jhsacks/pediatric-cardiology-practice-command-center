@@ -44,7 +44,12 @@ def common_fields(extra,user,key,x):
 
 def save_object(data,bucket,extra,save_extra,user,x,values,new=False):
     x.update(values); x.setdefault("id",bucket[:3].upper()+"-"+uuid4().hex[:8]); x.setdefault("created_by",user); x.setdefault("created_at",now()); x["updated_by"]=user; x["updated_at"]=now()
-    if new: data[bucket].append(x)
+    if new:
+        data[bucket].append(x)
+        prefix="new_"+bucket+"_"
+        for state_key in list(st.session_state.keys()):
+            if str(state_key).startswith(prefix):
+                del st.session_state[state_key]
     save_extra(extra); st.rerun()
 
 def object_module(data,extra,save_extra,user,bucket,title,kind_fields):

@@ -38,10 +38,8 @@ def ensure31(data):
     for _,bucket in BUCKETS:
         for x in data[bucket]:
             x["status"]=migrate_status(x.get("status")); x.setdefault("needs_executive_decision",False); x.setdefault("submitted_by",x.get("created_by",x.get("owner",""))); x.setdefault("submitted_at",x.get("created_at",now()))
-            if x["status"]!="Executive Brainstorming": x["sharing"]="Everyone"; x["shared_with"]=[]
     for x in data.get("draft_items",[]):
         x["status"]=migrate_status(x.get("status")); x.setdefault("needs_executive_decision",False)
-        if x["status"]!="Executive Brainstorming": x["sharing"]="Everyone"; x["shared_with"]=[]
     for s in data.get("suggestions",[]):
         if not any(q.get("legacy_id")==s.get("id") for q in data["suggestion_queue"]):
             data["suggestion_queue"].append({"id":s.get("id","SUG-"+uuid4().hex[:8]),"legacy_id":s.get("id"),"section":"General Strategy","title":str(s.get("text","Suggestion"))[:100],"description":s.get("text",""),"submitted_by":s.get("user","Unknown"),"submitted_at":s.get("time",now()),"reviewer":"Jackie Gurr","status":"Suggestion","archive_reason":""})
@@ -49,9 +47,15 @@ def ensure31(data):
 
 def visible31(x,user,executive=False):
     status=migrate_status(x.get("status"))
-    if status=="Suggestion": return executive and leadership_context(x,user)
-    if status=="Executive Brainstorming": return x.get("sharing","Only me")=="Everyone" or x.get("owner")==user or x.get("created_by")==user or user in x.get("shared_with",[])
-    return True
+    if status=="Suggestion":
+        return executive and leadership_context(x,user)
+    sharing=x.get("sharing","Everyone")
+    return (
+        sharing=="Everyone"
+        or x.get("owner")==user
+        or x.get("created_by")==user
+        or user in x.get("shared_with",[])
+    )
 
 def leadership_context(x,user): return user in {x.get("reviewer"),x.get("owner"),x.get("created_by"),"Jeffrey Sacks","Jackie Gurr"}
 
@@ -79,10 +83,11 @@ def object_header(data,extra,user,key,x):
         needs=st.checkbox("Needs Executive Decision",value=bool(x.get("needs_executive_decision",False)),key=key+"_need31")
         sharing=x.get("sharing","Selected people")
         shared=x.get("shared_with",[])
-        if status=="Executive Brainstorming":
-            sharing=st.selectbox("Share with",["Only me","Selected people","Everyone"],index=["Only me","Selected people","Everyone"].index(sharing) if sharing in ["Only me","Selected people","Everyone"] else 1,key=key+"_sharing31")
-            if sharing=="Selected people": shared=st.multiselect("Selected people",people(extra),default=[p for p in shared if p in people(extra)],key=key+"_people31")
-        else: sharing="Everyone";shared=[];st.caption("Visible to everyone at Idea stage and later.")
+        sharing=st.selectbox("Share with",["Only me","Selected people","Everyone"],index=["Only me","Selected people","Everyone"].index(sharing) if sharing in ["Only me","Selected people","Everyone"] else 1,key=key+"_sharing31")
+        if sharing=="Selected people":
+            shared=st.multiselect("Selected people",people(extra),default=[p for p in shared if p in people(extra)],key=key+"_people31")
+        elif sharing!="Selected people":
+            shared=[]
         return status,needs,sharing,shared
     return status,bool(x.get("needs_executive_decision",False)),"Everyone",[]
 

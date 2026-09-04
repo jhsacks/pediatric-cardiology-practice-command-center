@@ -1,163 +1,41 @@
 import hashlib
 import json
-
 import pandas as pd
 import streamlit as st
 
-ARTICLE_STATES = ["Unread", "Reviewed", "Not Relevant", "Archived For Me"]
-
-
-def _article_list(extra):
-    clinical = extra.get("clinical_intelligence", {})
-    return clinical.get("items", clinical.get("articles", []))
-
-
-def _article_id(article):
-    existing = article.get("id") or article.get("link") or article.get("url")
-    if existing:
-        return str(existing)
-    identity = json.dumps(
-        {
-            "title": article.get("title", ""),
-            "source": article.get("source", ""),
-            "date": article.get("date_added", article.get("date", "")),
-        },
-        sort_keys=True,
-        default=str,
-    )
-    return hashlib.sha256(identity.encode("utf-8")).hexdigest()[:24]
-
-
-def _active_names(extra):
-    return [
-        str(row.get("name"))
-        for row in extra.get("collaboration", {}).get("users", [])
-        if row.get("active", True) and str(row.get("name", "")).strip()
-    ]
-
-
-def _resolve_user(extra, current_user, key):
-    names = _active_names(extra)
-    current_name = (current_user or {}).get("name") if current_user else None
-    if current_name in names:
-        return current_name
-    if names:
-        return st.selectbox("Clinical Intelligence for", names, key=key)
-    return current_name or "Current User"
-
-
-def _save_state(extra, save_extra, user, article_id, state):
-    collaboration = extra.setdefault("collaboration", {})
-    states = collaboration.setdefault("article_user_state", {})
-    states.setdefault(user, {})[article_id] = state
-    save_extra(extra)
-
-
-def _summary(article):
-    return (
-        article.get("synopsis")
-        or article.get("summary")
-        or article.get("abstract")
-        or article.get("description")
-        or "No synopsis is available for this article."
-    )
-
-
-def _team_status(extra, article_id):
-    all_states = extra.get("collaboration", {}).get("article_user_state", {})
-    return [
-        {
-            "User": name,
-            "Status": all_states.get(name, {}).get(article_id, "Unread"),
-        }
-        for name in _active_names(extra)
-    ]
-
-
-def render_personal_clinical_intelligence(extra, save_extra, current_user=None):
-    collaboration = extra.setdefault("collaboration", {})
-    all_states = collaboration.setdefault("article_user_state", {})
-    user = _resolve_user(extra, current_user, "personal_ci_user")
-    personal = all_states.setdefault(user, {})
-    articles = _article_list(extra)
-
-    st.subheader("Clinical Intelligence")
-    st.caption(f"Personalized for {user}. Article actions do not change another user's status.")
-
-    counts = {state: 0 for state in ARTICLE_STATES}
-    for article in articles:
-        article_id = _article_id(article)
-        state = personal.get(article_id, "Unread")
-        if state not in ARTICLE_STATES:
-            state = "Unread"
-        counts[state] += 1
-
-    columns = st.columns(4)
-    for column, state in zip(columns, ARTICLE_STATES):
-        column.metric(state, counts[state])
-
-    filters = st.multiselect(
-        "Show articles with my status",
-        ARTICLE_STATES,
-        default=["Unread"],
-        key=f"personal_ci_filters_20260831_{user}",
-    )
-
-    visible = 0
-    for index, article in enumerate(articles):
-        article_id = _article_id(article)
-        current = personal.get(article_id, "Unread")
-        if current not in ARTICLE_STATES:
-            current = "Unread"
-        if current not in filters:
-            continue
-        visible += 1
-
-        title = str(article.get("title", "Untitled article"))
-        st.markdown(f"### {title}")
-        st.caption(f"My status: {current}")
-
-        buttons = st.columns(4)
-        actions = [
-            ("Mark Unread", "Unread", "unread"),
-            ("Mark Reviewed", "Reviewed", "reviewed"),
-            ("Not Relevant", "Not Relevant", "not_relevant"),
-            ("Archive For Me", "Archived For Me", "archive"),
-        ]
-        selected = None
-        for column, (label, state, suffix) in zip(buttons, actions):
-            if column.button(
-                label,
-                key=f"ci_{suffix}_{user}_{article_id}_{index}",
-                use_container_width=True,
-            ):
-                selected = state
-        if selected:
-            _save_state(extra, save_extra, user, article_id, selected)
-            st.rerun()
-
-        st.write(_summary(article))
-
+ARTICLE_STATES=["Unread","Reviewed","Not Relevant","Archived For Me"]
+def aid(a):
+    key=a.get("id") or a.get("link") or a.get("url")
+    if key:return str(key)
+    return hashlib.sha256(json.dumps({"title":a.get("title"),"source":a.get("source"),"date":a.get("date_added")},sort_keys=True,default=str).encode()).hexdigest()[:24]
+def articles(extra):
+    c=extra.get("clinical_intelligence",{});return c.get("items",c.get("articles",[]))
+def names(extra):return [str(x.get("name")) for x in extra.get("collaboration",{}).get("users",[]) if x.get("active",True) and x.get("name")]
+def user_for(extra,current):
+    n=(current or {}).get("name") if current else None
+    return n if n in names(extra) else (st.selectbox("Clinical Intelligence for",names(extra),key="ci31_user") if names(extra) else n or "Current User")
+def render_personal_clinical_intelligence(extra,save_extra,current_user=None):
+    collab=extra.setdefault("collaboration",{}); states_all=collab.setdefault("article_user_state",{});user=user_for(extra,current_user);states=states_all.setdefault(user,{})
+    st.subheader("Clinical Intelligence"); query=st.text_input("Search articles, including my archive",placeholder="Title, author, journal, topic, keyword",key="ci31_search").strip().lower()
+    filters=st.multiselect("Show articles with my status",ARTICLE_STATES,default=ARTICLE_STATES if query else ["Unread"],key=f"ci31_filters_{user}")
+    rows=[]
+    for a in articles(extra):
+        article_id=aid(a);status=states.get(article_id,"Unread"); hay=" ".join(str(a.get(k,"")) for k in ["title","author","authors","journal","topic","source","synopsis","summary","abstract","key_findings","practice_relevance"]).lower()
+        if status in filters and (not query or query in hay):rows.append((a,article_id,status))
+    counts={s:sum(states.get(aid(a),"Unread")==s for a in articles(extra)) for s in ARTICLE_STATES};cols=st.columns(4)
+    for col,s in zip(cols,ARTICLE_STATES):col.metric(s,counts[s])
+    if not rows:st.info("No articles match the search and status filters.")
+    for index,(a,article_id,status) in enumerate(rows):
+        st.markdown(f"### {a.get('title','Untitled article')}");st.caption(f"My status: {status}");buttons=st.columns(4);chosen=None
+        for col,(label,state,suffix) in zip(buttons,[("Mark Unread","Unread","u"),("Mark Reviewed","Reviewed","r"),("Not Relevant","Not Relevant","n"),("Archive For Me","Archived For Me","a")]):
+            if col.button(label,key=f"ci31_{suffix}_{user}_{article_id}_{index}",use_container_width=True):chosen=state
+        if chosen:states[article_id]=chosen;save_extra(extra);st.rerun()
+        st.write(a.get("synopsis") or a.get("summary") or a.get("abstract") or "No synopsis available.")
         with st.expander("Full article details"):
-            details = [
-                ("Key Findings", "key_findings"),
-                ("Practice Relevance", "practice_relevance"),
-                ("Source", "source"),
-                ("Date", "date_added"),
-            ]
-            for label, field in details:
-                if article.get(field):
-                    st.markdown(f"**{label}:** {article[field]}")
-            link = article.get("link") or article.get("url")
-            if link:
-                st.link_button("Open source", link)
-            team = _team_status(extra, article_id)
-            st.markdown("**Team review status**")
-            if team:
-                st.dataframe(pd.DataFrame(team), hide_index=True, use_container_width=True)
-            else:
-                st.caption("No team directory is available.")
+            for label,k in [("Authors","authors"),("Journal","journal"),("Topic","topic"),("Key Findings","key_findings"),("Practice Relevance","practice_relevance"),("Source","source"),("Date","date_added")]:
+                if a.get(k):st.markdown(f"**{label}:** {a[k]}")
+            link=a.get("link") or a.get("url")
+            if link:st.link_button("Open source",link)
+            if st.button("Convert to Growth Strategy Suggestion",key=f"ci31_strategy_{article_id}_{index}"):
+                gs=extra.setdefault("growth_strategy_26",{});queue=gs.setdefault("suggestion_queue",[]);queue.append({"id":"SUG-ART-"+article_id,"section":"Clinical Services","bucket":"service_objects","title":a.get("title","Article-based suggestion"),"description":a.get("synopsis") or a.get("summary") or "Review this article for strategy implications.","submitted_by":user,"submitted_at":pd.Timestamp.utcnow().isoformat(),"reviewer":"Jackie Gurr","status":"Suggestion","source_article":link or article_id,"archive_reason":""});save_extra(extra);st.success("Strategy suggestion submitted.")
         st.divider()
-
-    if visible == 0:
-        st.info("No articles match the selected personal status filters.")

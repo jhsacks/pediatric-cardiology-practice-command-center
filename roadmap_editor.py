@@ -251,7 +251,7 @@ def render_roadmap_editor(data, extra, save_extra, user, executive=False):
 
     controls = st.columns(4)
     horizon_filter = controls[0].multiselect("Horizon", HORIZONS, default=HORIZONS, key="roadmap28_horizons")
-    status_filter = controls[1].multiselect("Status", STATUSES, default=["Draft", "Under Review", "Approved", "Published"], key="roadmap28_status")
+    status_filter = controls[1].multiselect("Status", STATUSES, default=["Idea", "Planning", "Approved", "In Progress"]
     domain_filter = controls[2].multiselect("Domain", DOMAINS, default=DOMAINS, key="roadmap28_domain")
     show_archived = controls[3].toggle("Show archived", False, key="roadmap28_archived")
 

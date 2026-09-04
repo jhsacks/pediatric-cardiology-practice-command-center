@@ -56,7 +56,7 @@ def object_module(data,extra,save_extra,user,bucket,title,kind_fields):
     st.subheader(title)
     submit_suggestion(data,extra,save_extra,user,title,bucket)
     if editable(data,user):
-        with st.expander("➕ Add "+title.rstrip("s"),False):
+        with st.expander("➕ Add "+("Location Strategy" if title=="Location Strategies" else title[:-1] if title.endswith("s") else title),False):
             x={"owner":user,"sharing":"Selected people","shared_with":[data.get("roles",{}).get("editor","Jackie Gurr")]}; values={}
             values["title"]=st.text_input("Name",key="new_"+bucket+"_title"); values["description"]=st.text_area("Purpose / need",key="new_"+bucket+"_description"); values.update(common_fields(extra,user,"new_"+bucket,x))
             for label,name,kind,choices in kind_fields:

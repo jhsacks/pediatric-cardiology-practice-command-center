@@ -2,6 +2,7 @@ from copy import deepcopy
 
 import pandas as pd
 import streamlit as st
+from scenario_workforce_32 import render_scenario_workforce
 from personal_scenarios import render_personal_scenarios
 
 from strategic_portfolio import render_growth_planner, render_strategic_portfolio
@@ -154,7 +155,7 @@ def impact_preview(saved, preview):
 def render_strategic_planning_center(extra, save_extra, current_user=None):
     data = ensure_planning(extra)
     save = lambda: save_extra(extra)
-    tabs = st.tabs(["Portfolio", "Shared Scenarios", "My Scenarios", "Assumptions & Demand", "Roadmap", "Risks", "Notes"])
+    tabs = st.tabs(["Portfolio", "Shared Scenarios", "My Scenarios", "Assumptions & Demand", "Roadmap", "Risks", "Notes", "Workforce & Schedule"])
 
     with tabs[0]:
         render_strategic_portfolio(extra)
@@ -229,3 +230,6 @@ def render_strategic_planning_center(extra, save_extra, current_user=None):
             data["notes"] = notes
             save()
             st.rerun()
+    with tabs[7]:
+        render_scenario_workforce(extra, save_extra, current_user=current_user)
+

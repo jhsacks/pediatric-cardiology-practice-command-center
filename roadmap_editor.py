@@ -7,7 +7,7 @@ import streamlit as st
 HORIZONS = ["1 Year", "3 Years", "5 Years", "10-Year Vision"]
 DOMAINS = ["Vision", "Physician Workforce", "Locations & Access", "Telemedicine", "Clinical Services", "Staffing", "Equipment & Infrastructure", "Hospital Integration", "Quality", "Finance", "Other"]
 SERVICES = ["General Pediatric Cardiology", "Fetal Cardiology", "Advanced Cardiac Imaging", "Pediatric Electrophysiology", "Interventional Pediatric Cardiology", "Adult Congenital Cardiology", "Pediatric Cardiac Surgery", "NICU / PICU Integration", "Telemedicine", "Other"]
-STATUSES = ["Suggestion", "Draft", "Under Review", "Approved", "Published", "Deferred", "Declined", "Archived", "Superseded"]
+STATUSES = ["Executive Brainstorming", "Suggestion", "Idea", "Planning", "Approved", "In Progress", "Archived"]
 PRIORITIES = ["Critical", "High", "Medium", "Low"]
 SHARING = ["Everyone", "Selected people", "Only me"]
 
@@ -48,7 +48,7 @@ def normalize(item):
     item.setdefault("domain", "Other")
     item.setdefault("service", "General Pediatric Cardiology")
     item.setdefault("owner", "")
-    item.setdefault("status", "Draft")
+    item.setdefault("status", "Idea")
     item.setdefault("priority", "Medium")
     item.setdefault("target_date", "")
     item.setdefault("sharing", "Selected people")

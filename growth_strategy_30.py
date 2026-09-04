@@ -4,9 +4,10 @@ from uuid import uuid4
 
 import pandas as pd
 import streamlit as st
+from growth_governance_31 import ensure31, visible31, leadership, submit_suggestion, comments, object_header, review_queue
 
 HORIZONS = ["1 Year", "3 Years", "5 Years", "10-Year Vision"]
-OBJECT_STATUSES = ["Idea", "Discovery", "Feasibility", "Business Case", "Approved", "Building", "Launch Ready", "Live", "Scaling", "Deferred", "Archived"]
+OBJECT_STATUSES = ["Executive Brainstorming", "Suggestion", "Idea", "Planning", "Approved", "In Progress", "Archived"]
 PRIORITIES = ["Critical", "High", "Medium", "Low"]
 SHARING = ["Everyone", "Selected people", "Only me"]
 TELEMEDICINE_MODELS = ["In-person only", "Telemedicine only", "Hybrid", "Telemedicine between in-person clinics", "Local diagnostics + remote cardiology", "Provider-to-provider consultation", "Needs evaluation", "Not appropriate"]
@@ -48,6 +49,7 @@ def save_object(data,bucket,extra,save_extra,user,x,values,new=False):
 
 def object_module(data,extra,save_extra,user,bucket,title,kind_fields):
     st.subheader(title)
+    submit_suggestion(data,extra,save_extra,user,title,bucket)
     if editable(data,user):
         with st.expander("➕ Add "+title.rstrip("s"),False):
             x={"owner":user,"sharing":"Selected people","shared_with":[data.get("roles",{}).get("editor","Jackie Gurr")]}; values={}
@@ -61,7 +63,8 @@ def object_module(data,extra,save_extra,user,bucket,title,kind_fields):
                 if not values["title"].strip(): st.error("Name is required.")
                 else: save_object(data,bucket,extra,save_extra,user,x,values,True)
     for x in list(data[bucket]):
-        if not visible(x,user) or x.get("status")=="Archived": continue
+        ensure31(data)
+        if not visible31(x,user,executive=leadership(data,user)) or x.get("status")=="Archived": continue
         with st.expander(f"{x.get('title','Untitled')} | {x.get('priority','Medium')} | {x.get('status','Discovery')}"):
             if editable(data,user):
                 values={"title":st.text_input("Name",x.get("title",""),key=x["id"]+"_title"),"description":st.text_area("Purpose / need",x.get("description",""),key=x["id"]+"_description")}; values.update(common_fields(extra,user,x["id"],x))
@@ -88,7 +91,7 @@ def create_sync_proposals(data):
     added=0
     for source_type,bucket in mapping:
         for x in data[bucket]:
-            if x.get("status") in {"Approved","Building","Launch Ready","Live","Scaling"} and (source_type,x["id"],"Create roadmap item") not in existing:
+            if x.get("status") in {"Approved","In Progress"} and (source_type,x["id"],"Create roadmap item") not in existing:
                 data["sync_proposals"].append({"id":"SYN-"+uuid4().hex[:8],"source_type":source_type,"source_id":x["id"],"source_title":x.get("title"),"action":"Create roadmap item","horizon":x.get("horizon","1 Year"),"reason":f"{source_type} object reached {x.get('status')}","status":"Pending","created_at":now()});added+=1
     return added
 
@@ -103,7 +106,7 @@ def sync_tab(data,extra,save_extra,user):
             if editable(data,user):
                 a,b=st.columns(2)
                 if a.button("Apply to Roadmap",type="primary",key=p["id"]+"_apply"):
-                    data.setdefault("draft_items",[]).append({"id":"GST-"+uuid4().hex[:8],"title":p["source_title"],"description":p["reason"],"horizon":p["horizon"],"domain":p["source_type"],"service":"General Pediatric Cardiology","owner":user,"status":"Draft","priority":"High","sharing":"Selected people","shared_with":[data.get("roles",{}).get("editor","Jackie Gurr")],"roadmap":["Validate the strategic object","Resolve dependencies","Create linked initiative and decision","Review progress and outcomes"],"dependencies":[],"risks":[],"success_measures":[],"created_at":now(),"updated_at":now()});p["status"]="Applied";save_extra(extra);st.rerun()
+                    data.setdefault("draft_items",[]).append({"id":"GST-"+uuid4().hex[:8],"title":p["source_title"],"description":p["reason"],"horizon":p["horizon"],"domain":p["source_type"],"service":"General Pediatric Cardiology","owner":user,"status":"Idea","priority":"High","sharing":"Selected people","shared_with":[data.get("roles",{}).get("editor","Jackie Gurr")],"roadmap":["Validate the strategic object","Resolve dependencies","Create linked initiative and decision","Review progress and outcomes"],"dependencies":[],"risks":[],"success_measures":[],"created_at":now(),"updated_at":now()});p["status"]="Applied";save_extra(extra);st.rerun()
                 if b.button("Dismiss",key=p["id"]+"_dismiss"):p["status"]="Dismissed";save_extra(extra);st.rerun()
 
 def recommendation_dates(planning,settings):
@@ -194,14 +197,15 @@ def agent_suggestions_tab(data,extra,save_extra,user):
         with st.expander(s["title"]):st.write(s["reason"]);st.markdown("**Suggested action:** "+s["action"])
 
 def render_growth_strategy_30(data,extra,save_extra,user,executive=False):
-    ensure(data)
-    tabs=st.tabs(["📍 Location Strategy","💻 Telemedicine Engine","👥 Staffing Plan","🩻 Infrastructure Plan","🫀 Clinical Services","🔄 Roadmap Sync","👨‍⚕️ Recruitment Forecast","💡 Agent Suggestions","📋 Leadership Brief"])
+    ensure(data); ensure31(data)
+    tabs=st.tabs(["📍 Location Strategy","💻 Telemedicine Engine","👥 Staffing Plan","🩻 Infrastructure Plan","🫀 Clinical Services","📨 Review Suggestions","🔄 Roadmap Sync","👨‍⚕️ Recruitment Forecast","💡 Agent Suggestions","📋 Leadership Brief"])
     with tabs[0]:object_module(data,extra,save_extra,user,"location_objects","Location Strategies",location_fields())
     with tabs[1]:object_module(data,extra,save_extra,user,"telemedicine_objects","Telemedicine Plans",telemedicine_fields())
     with tabs[2]:object_module(data,extra,save_extra,user,"staffing_objects","Staffing Plans",staffing_fields())
     with tabs[3]:object_module(data,extra,save_extra,user,"infrastructure_objects","Infrastructure Plans",infrastructure_fields())
     with tabs[4]:object_module(data,extra,save_extra,user,"service_objects","Clinical Service Plans",service_fields())
-    with tabs[5]:sync_tab(data,extra,save_extra,user)
-    with tabs[6]:recruitment_tab(data,extra,save_extra,user)
-    with tabs[7]:agent_suggestions_tab(data,extra,save_extra,user)
-    with tabs[8]:briefing_tab(data,extra,save_extra,user)
+    with tabs[5]:review_queue(data,extra,save_extra,user)
+    with tabs[6]:sync_tab(data,extra,save_extra,user)
+    with tabs[7]:recruitment_tab(data,extra,save_extra,user)
+    with tabs[8]:agent_suggestions_tab(data,extra,save_extra,user)
+    with tabs[9]:briefing_tab(data,extra,save_extra,user)

@@ -1,0 +1,21 @@
+name: Install Growth Strategy 31
+on:
+  workflow_dispatch:
+permissions:
+  contents: write
+jobs:
+  install:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - run: python install_gs31.py
+      - run: python -m py_compile app.py growth_strategy.py growth_strategy_30.py growth_governance_31.py personal_clinical_intelligence.py roadmap_editor.py
+      - run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add app.py growth_strategy_30.py growth_governance_31.py personal_clinical_intelligence.py roadmap_editor.py
+          git diff --cached --quiet || git commit -m "Install Growth Strategy 31 governance"
+          git push

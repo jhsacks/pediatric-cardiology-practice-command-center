@@ -74,6 +74,7 @@ def ensure_store(extra):
             for key in ["Pattern", "Call Type", "Full Day", "Morning", "Evening", "Vacation Doctors", "Vacation Details", "Observances", "Call Credits", "Schedule Issues"]: row.pop(key, None)
     ensure_data(store)
     migrate_previous_direct_entries(store)
+    store.setdefault("observed_holidays", {})
     return store
 
 
@@ -93,10 +94,121 @@ def assignments(store, call):
     return [(name, 0.5) for name in [item.get("Morning"), item.get("Evening")] if name]
 
 
+def likely_observed_date(actual_date):
+    if actual_date.weekday() == calendar.SATURDAY:
+        return actual_date - timedelta(days=1)
+    if actual_date.weekday() == calendar.SUNDAY:
+        return actual_date + timedelta(days=1)
+    return actual_date
+
+
+def observed_holiday_defaults(year):
+    next_new_year = date(year + 1, 1, 1)
+    rows = [
+        {"Holiday": "New Year's Day", "Actual Date": date(year, 1, 1), "Observed Date": likely_observed_date(date(year, 1, 1)), "Office Closed": True, "No Vacation Charge": True, "Notes": ""},
+        {"Holiday": "MLK Day", "Actual Date": _nth(year, 1, calendar.MONDAY, 3), "Observed Date": _nth(year, 1, calendar.MONDAY, 3), "Office Closed": True, "No Vacation Charge": True, "Notes": ""},
+        {"Holiday": "Memorial Day", "Actual Date": _last(year, 5, calendar.MONDAY), "Observed Date": _last(year, 5, calendar.MONDAY), "Office Closed": True, "No Vacation Charge": True, "Notes": ""},
+        {"Holiday": "Independence Day", "Actual Date": date(year, 7, 4), "Observed Date": likely_observed_date(date(year, 7, 4)), "Office Closed": True, "No Vacation Charge": True, "Notes": ""},
+        {"Holiday": "Labor Day", "Actual Date": _nth(year, 9, calendar.MONDAY, 1), "Observed Date": _nth(year, 9, calendar.MONDAY, 1), "Office Closed": True, "No Vacation Charge": True, "Notes": ""},
+        {"Holiday": "Thanksgiving", "Actual Date": _nth(year, 11, calendar.THURSDAY, 4), "Observed Date": _nth(year, 11, calendar.THURSDAY, 4), "Office Closed": True, "No Vacation Charge": True, "Notes": ""},
+        {"Holiday": "Christmas Day", "Actual Date": date(year, 12, 25), "Observed Date": likely_observed_date(date(year, 12, 25)), "Office Closed": True, "No Vacation Charge": True, "Notes": ""},
+        {"Holiday": f"New Year's Day {year + 1}", "Actual Date": next_new_year, "Observed Date": likely_observed_date(next_new_year), "Office Closed": likely_observed_date(next_new_year).year == year, "No Vacation Charge": True, "Notes": "Review when the observed date falls in this calendar year."},
+    ]
+    return rows
+
+
+def ensure_observed_holidays(store, year):
+    key = str(year)
+    saved = store.setdefault("observed_holidays", {}).get(key)
+    if saved:
+        return saved
+    defaults_for_year = observed_holiday_defaults(year)
+    # Preserve the established 2027 accounting baseline.
+    if year == 2027:
+        by_name = {row["Holiday"]: row for row in defaults_for_year}
+        by_name["Independence Day"]["Observed Date"] = date(2027, 7, 5)
+        by_name["Christmas Day"]["Observed Date"] = date(2027, 12, 24)
+        by_name["New Year's Day 2028"]["Observed Date"] = date(2027, 12, 31)
+        by_name["New Year's Day 2028"]["Office Closed"] = True
+    store["observed_holidays"][key] = [
+        {**row, "Actual Date": row["Actual Date"].isoformat(), "Observed Date": row["Observed Date"].isoformat()}
+        for row in defaults_for_year
+    ]
+    return store["observed_holidays"][key]
+
+
+def no_charge_dates(store, year):
+    dates = set()
+    for row in ensure_observed_holidays(store, year):
+        if not row.get("Office Closed", True) or not row.get("No Vacation Charge", True):
+            continue
+        try:
+            observed = date.fromisoformat(str(row.get("Observed Date", ""))[:10])
+        except ValueError:
+            continue
+        if observed.year == year:
+            dates.add(observed)
+    return dates
+
+
+def render_observed_holidays(store, year, save_callback):
+    st.markdown("#### Observed Holidays")
+    rows = ensure_observed_holidays(store, year)
+    complete = all(str(row.get("Observed Date", "")).strip() for row in rows if row.get("Office Closed", True))
+    if complete:
+        st.success(f"{year} observed holiday calendar complete")
+    else:
+        st.warning(f"{year} observed holiday calendar needs review")
+    st.caption("The app defaults to the most likely observed Friday or Monday for fixed holidays that fall on a weekend. Review and select the actual office-closure date for each year. QGenda determines who is away; this calendar determines whether the day consumes vacation.")
+    frame_data = pd.DataFrame(rows)
+    frame_data["Actual Date"] = pd.to_datetime(frame_data["Actual Date"], errors="coerce").dt.date
+    frame_data["Observed Date"] = pd.to_datetime(frame_data["Observed Date"], errors="coerce").dt.date
+    edited = st.data_editor(
+        frame_data,
+        hide_index=True,
+        use_container_width=True,
+        key=f"observed_holidays_{year}",
+        column_config={
+            "Holiday": st.column_config.TextColumn("Holiday", disabled=True),
+            "Actual Date": st.column_config.DateColumn("Actual date", disabled=True),
+            "Observed Date": st.column_config.DateColumn("Office-closed date", min_value=date(year, 1, 1), max_value=date(year, 12, 31), required=True),
+            "Office Closed": st.column_config.CheckboxColumn("Office closed"),
+            "No Vacation Charge": st.column_config.CheckboxColumn("No vacation charge"),
+            "Notes": st.column_config.TextColumn("Notes"),
+        },
+    )
+    if st.button(f"Save Observed Holidays for {year}", type="primary", key=f"save_observed_holidays_{year}"):
+        records = edited.where(pd.notna(edited), "").to_dict("records")
+        cleaned = []
+        for row in records:
+            actual = row.get("Actual Date")
+            observed = row.get("Observed Date")
+            if isinstance(actual, datetime): actual = actual.date()
+            if isinstance(observed, datetime): observed = observed.date()
+            cleaned.append({
+                "Holiday": str(row.get("Holiday", "")),
+                "Actual Date": actual.isoformat() if isinstance(actual, date) else str(actual),
+                "Observed Date": observed.isoformat() if isinstance(observed, date) else str(observed),
+                "Office Closed": bool(row.get("Office Closed", True)),
+                "No Vacation Charge": bool(row.get("No Vacation Charge", True)),
+                "Notes": str(row.get("Notes", "")),
+            })
+        store.setdefault("observed_holidays", {})[str(year)] = cleaned
+        save_callback()
+        st.success(f"Observed holidays saved for {year}.")
+        st.rerun()
+
+
+def _canonical_doctor_name(name):
+    value = str(name or "").strip()
+    aliases = {"sacks": "Jeffrey Sacks", "jeffrey sacks": "Jeffrey Sacks", "makadia": "Luv Makadia", "luv makadia": "Luv Makadia", "yaari": "Yoni Yaari", "yoni yaari": "Yoni Yaari", "jonathan yaari": "Yoni Yaari"}
+    return aliases.get(value.lower(), value)
+
+
 def _qgenda_vacation_text(items):
     labels = []
     for item in items or []:
-        name = str(item.get("person", "")).strip()
+        name = _canonical_doctor_name(item.get("person", ""))
         session = str(item.get("session", "BOTH")).upper()
         if not name:
             continue
@@ -108,10 +220,10 @@ def _qgenda_vacation_text(items):
 def _qgenda_call_text(store, planned_call, call_data):
     call_type = str((call_data or {}).get("type", "UNASSIGNED"))
     if call_type == "FULL_DAY":
-        physician = str(call_data.get("full_day", "")).strip()
+        physician = _canonical_doctor_name(call_data.get("full_day", ""))
         exact = next((x.get("Call") for x in store.get("call_templates", []) if x.get("Full Day") == physician), None)
         return exact or (f"Full Day {physician.split()[-1]}" if physician else "Unassigned")
-    physicians = [str(x).strip() for x in call_data.get("physicians", []) if str(x).strip()]
+    physicians = [_canonical_doctor_name(x) for x in call_data.get("physicians", []) if str(x).strip()]
     if call_type in ("SPLIT_UNORDERED", "REVIEW") and physicians:
         planned_people = [name for name, _ in assignments(store, planned_call)]
         if len(planned_people) == len(physicians) and set(planned_people) == set(physicians):
@@ -127,51 +239,39 @@ def qgenda_frame(store, year, operational):
     rows = []
     for _, planned_row in planned.iterrows():
         current = planned_row["Date"]
-        day = qdays.get(current.isoformat())
-        if day:
-            current_call = _qgenda_call_text(store, planned_row.get("Call", "Unassigned"), day.get("call", {}))
-            current_vacation = _qgenda_vacation_text(day.get("vacations", []))
-            source = "QGenda"
-        else:
-            current_call = planned_row.get("Call", "Unassigned")
-            current_vacation = planned_row.get("Vacation", "")
-            source = "Annual plan"
+        day = qdays.get(current.isoformat()) or {}
+        qcall = day.get("call") or {}
+        qvacations = day.get("vacations") or []
+        has_call = qcall.get("type") not in (None, "", "UNASSIGNED")
+        has_vacation = bool(qvacations)
+        current_call = _qgenda_call_text(store, planned_row.get("Call", "Unassigned"), qcall) if has_call else planned_row.get("Call", "Unassigned")
+        current_vacation = _qgenda_vacation_text(qvacations) if has_vacation else planned_row.get("Vacation", "")
+        source_parts = []
+        if has_call: source_parts.append("QGenda call")
+        if has_vacation: source_parts.append("QGenda vacation")
+        source = " + ".join(source_parts) if source_parts else "Annual plan"
         call_people = assignments(store, current_call)
         away = {x.strip().split(" (")[0] for x in current_vacation.split(";") if x.strip()}
         conflicts = sorted({name for name, _ in call_people if name in away})
         issues = []
-        if not call_people:
-            issues.append("Unassigned call")
-        if conflicts:
-            issues.append("Call/vacation: " + ", ".join(conflicts))
-        rows.append({
-            "Date": current,
-            "Day": planned_row.get("Day", current.strftime("%A")),
-            "Holiday": planned_row.get("Holiday", ""),
-            "Observances": planned_row.get("Observances", ""),
-            "Call": current_call,
-            "Vacation": current_vacation,
-            "Notes": planned_row.get("Notes", ""),
-            "Issues": "; ".join(issues),
-            "Source": source,
-            "Planned Call": planned_row.get("Call", "Unassigned"),
-            "Planned Vacation": planned_row.get("Vacation", ""),
-        })
+        if not call_people: issues.append("Unassigned call")
+        if conflicts: issues.append("Call/vacation: " + ", ".join(conflicts))
+        rows.append({"Date": current, "Day": planned_row.get("Day", current.strftime("%A")), "Holiday": planned_row.get("Holiday", ""), "Observances": planned_row.get("Observances", ""), "Call": current_call, "Vacation": current_vacation, "Notes": planned_row.get("Notes", ""), "Issues": "; ".join(issues), "Source": source, "Planned Call": planned_row.get("Call", "Unassigned"), "Planned Vacation": planned_row.get("Vacation", "")})
     return pd.DataFrame(rows)
 
 
 def qgenda_vacation_summary(data, store, doctors):
-    closed = {"New Year's Day", "MLK Day", "Memorial Day", "Fourth of July", "Labor Day", "Thanksgiving", "Christmas Day"}
+    selected_year = int(data.iloc[0]["Date"].year) if not data.empty else datetime.now().year
+    excluded = no_charge_dates(store, selected_year)
     used = {name: 0.0 for name in doctors}
     for _, row in data.iterrows():
         current = row["Date"]
-        if current.weekday() >= 5 or row.get("Holiday", "") in closed:
-            continue
+        if current.weekday() >= 5 or current in excluded: continue
         for item in str(row.get("Vacation", "") or "").split(";"):
             item = item.strip()
             for doctor in doctors:
                 if item.startswith(doctor + " ("):
-                    used[doctor] += 0.5 if item.endswith("(AM)") or item.endswith("(PM)") else 1.0
+                    used[doctor] += 0.5 if item.endswith("(AM)") or item.endswith("(PM)") or item.endswith("(Half Day)") else 1.0
     allocations = {str(x.get("Doctor", "")): float(x.get("Vacation Allocation", 0) or 0) for x in store.get("doctors", [])}
     return pd.DataFrame([{"Doctor": name, "Allocation": allocations.get(name, 0.0), "Days Used": used[name], "Days Remaining": allocations.get(name, 0.0) - used[name]} for name in doctors])
 
@@ -190,7 +290,7 @@ def _excel_date(value):
     return None
 
 
-def build_synced_workbook(uploaded_file, data, vacation_summary, operational):
+def build_synced_workbook(uploaded_file, data, vacation_summary, operational, store):
     workbook = load_workbook(BytesIO(uploaded_file.getvalue()))
     sheet = workbook[workbook.sheetnames[0]]
     headers = {}
@@ -204,21 +304,40 @@ def build_synced_workbook(uploaded_file, data, vacation_summary, operational):
     if not header_row:
         raise ValueError("The workbook must contain Date, Call, and Vacation columns.")
     by_date = {row["Date"]: row for _, row in data.iterrows()}
+    workbook_year = next((current.year for current in by_date), datetime.now().year)
+    excluded_dates = no_charge_dates(store, workbook_year)
     for row in range(header_row + 1, sheet.max_row + 1):
         current = _excel_date(sheet.cell(row, headers["Date"]).value)
         if current not in by_date:
             continue
         values = by_date[current]
-        sheet.cell(row, headers["Call"]).value = values.get("Call", "")
-        sheet.cell(row, headers["Vacation"]).value = values.get("Vacation", "")
+        source = str(values.get("Source", ""))
+        if "QGenda call" in source:
+            sheet.cell(row, headers["Call"]).value = values.get("Call", "")
+        if "QGenda vacation" in source:
+            sheet.cell(row, headers["Vacation"]).value = values.get("Vacation", "")
         if "Days used" in headers:
-            vacation = str(values.get("Vacation", ""))
+            vacation = str(sheet.cell(row, headers["Vacation"]).value or "")
             credit = 0.0
-            if current.weekday() < 5 and values.get("Holiday", "") not in {"New Year's Day", "MLK Day", "Memorial Day", "Fourth of July", "Labor Day", "Thanksgiving", "Christmas Day"}:
+            if current.weekday() < 5 and current not in excluded_dates:
                 for item in vacation.split(";"):
                     if item.strip():
                         credit += 0.5 if item.strip().endswith("(AM)") or item.strip().endswith("(PM)") else 1.0
             sheet.cell(row, headers["Days used"]).value = credit if credit else ""
+    final_used = {doctor: 0.0 for doctor in vacation_summary["Doctor"].tolist()}
+    for sheet_row in range(header_row + 1, sheet.max_row + 1):
+        current = _excel_date(sheet.cell(sheet_row, headers["Date"]).value)
+        if not current or current.weekday() >= 5 or current in excluded_dates: continue
+        vacation_text = str(sheet.cell(sheet_row, headers["Vacation"]).value or "")
+        for item in vacation_text.split(";"):
+            item = item.strip()
+            for doctor in final_used:
+                if item.startswith(doctor + " ("):
+                    final_used[doctor] += 0.5 if item.endswith("(AM)") or item.endswith("(PM)") or item.endswith("(Half Day)") else 1.0
+    vacation_summary = vacation_summary.copy()
+    vacation_summary["Days Used"] = vacation_summary["Doctor"].map(final_used).fillna(0.0)
+    vacation_summary["Days Remaining"] = vacation_summary["Allocation"] - vacation_summary["Days Used"]
+
     name = "QGenda Sync Summary"
     if name in workbook.sheetnames:
         del workbook[name]
@@ -232,6 +351,8 @@ def build_synced_workbook(uploaded_file, data, vacation_summary, operational):
     summary["B3"] = operational.get("synced_at", "")
     summary["A4"] = "Coverage"
     summary["B4"] = f"{operational.get('range_start', '')} through {operational.get('range_end', '')}"
+    summary["A5"] = "Observed office closures"
+    summary["B5"] = ", ".join(sorted(d.isoformat() for d in excluded_dates))
     summary.append([])
     summary.append(["Doctor", "Allocation", "Days Used", "Days Remaining"])
     for cell in summary[6]:
@@ -245,10 +366,11 @@ def build_synced_workbook(uploaded_file, data, vacation_summary, operational):
     for cell in summary[call_header]:
         cell.font = Font(bold=True, color="FFFFFF")
         cell.fill = PatternFill("solid", fgColor="CF303B")
-    call_counts = operational.get("counts", {}).get("call", {})
+    resolved_counts = equity(data, store, vacation_summary["Doctor"].tolist())
+    resolved_map = {row["Doctor"]: row for _, row in resolved_counts.iterrows()}
     for doctor in vacation_summary["Doctor"].tolist():
-        counts = call_counts.get(doctor, {})
-        summary.append([doctor, counts.get("weekday", 0), counts.get("weekend", 0), counts.get("total", 0)])
+        counts = resolved_map.get(doctor, {})
+        summary.append([doctor, counts.get("Weekday", 0), counts.get("Weekend", 0), counts.get("Total", 0)])
     for column, width in {"A": 25, "B": 24, "C": 18, "D": 18, "E": 18}.items():
         summary.column_dimensions[column].width = width
     output = BytesIO()
@@ -279,7 +401,7 @@ def render_qgenda_operational(store, year, operational):
         workbook_file = st.file_uploader("Doctor schedule workbook", type=["xlsx"], key=f"doctor_schedule_workbook_{year}")
         if workbook_file:
             try:
-                synced = build_synced_workbook(workbook_file, data, balances, operational)
+                synced = build_synced_workbook(workbook_file, data, balances, operational, store)
                 st.download_button("Download synchronized doctor schedule", synced, file_name=f"Doc.schedule {year}.xlsx", mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet", use_container_width=True)
             except Exception as exc:
                 st.error(f"Workbook synchronization failed: {exc}")
@@ -342,7 +464,7 @@ def render_editor(extra, save_extra, log_activity=None, qgenda_operational=None)
     if view == "QGenda operational":
         render_qgenda_operational(store, year, qgenda_operational)
         return
-    doctors = roster(store); data = frame(store, year); metrics(data, store, doctors); tabs = st.tabs(["Schedule", "Quick Assign", "Doctors", "Owed Call", "Equity", "Holidays", "Schedule Issues"])
+    doctors = roster(store); data = frame(store, year); metrics(data, store, doctors); tabs = st.tabs(["Schedule", "Quick Assign", "Doctors", "Owed Call", "Equity", "Observed Holidays", "Schedule Issues"])
     with tabs[0]:
         vacation_controls(store, year, doctors, lambda: save_extra(extra))
         st.markdown("#### Daily schedule")
@@ -421,7 +543,10 @@ def render_editor(extra, save_extra, log_activity=None, qgenda_operational=None)
         owed = pd.DataFrame(store.get("owed_calls", [])) if store.get("owed_calls") else pd.DataFrame(columns=["Debtor", "Creditor", "Type", "Quantity", "Notes"]); changed = st.data_editor(owed, hide_index=True, use_container_width=True, num_rows="dynamic", key="owed_calls", column_config={"Debtor": st.column_config.SelectboxColumn("Debtor", options=doctors), "Creditor": st.column_config.SelectboxColumn("Creditor", options=doctors), "Type": st.column_config.SelectboxColumn("Type", options=["Weekday", "Weekend"]), "Quantity": st.column_config.NumberColumn("Quantity", min_value=0.5, step=0.5)})
         if st.button("Save Owed Calls"): store["owed_calls"] = changed.where(pd.notna(changed), "").to_dict("records"); save_extra(extra); st.rerun()
     with tabs[4]: st.dataframe(equity(data, store, doctors), hide_index=True, use_container_width=True)
-    with tabs[5]: st.dataframe(data[data["Holiday"].str.len() > 0][["Date", "Holiday", "Call"]], hide_index=True, use_container_width=True)
+    with tabs[5]:
+        render_observed_holidays(store, year, lambda: save_extra(extra))
+        st.markdown("#### Holiday call schedule")
+        st.dataframe(data[data["Holiday"].str.len() > 0][["Date", "Holiday", "Call"]], hide_index=True, use_container_width=True)
     with tabs[6]:
         problem = data[data["Issues"].str.len() > 0]
         if problem.empty: st.success("No schedule issues.")

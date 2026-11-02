@@ -551,3 +551,4 @@ def render_editor(extra, save_extra, log_activity=None, qgenda_operational=None)
         problem = data[data["Issues"].str.len() > 0]
         if problem.empty: st.success("No schedule issues.")
         else: st.dataframe(problem[["Date", "Day", "Holiday", "Issues", "Notes"]], hide_index=True, use_container_width=True)
+Deploy observed holidays tab
